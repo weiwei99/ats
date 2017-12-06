@@ -1,4 +1,4 @@
-package diskparser
+package cache
 
 import (
 	"fmt"
@@ -7,17 +7,6 @@ import (
 	"git.jd.com/pid-cdn/ats/lib/ts"
 	"github.com/golang/glog"
 )
-
-type CacheProcesser struct {
-	GVol []*Vol
-}
-
-func (cp *CacheProcesser) DirCheck(afix bool) int {
-	for _, v := range cp.GVol {
-		v.DirCheck(afix)
-	}
-	return 0
-}
 
 const (
 	StoreBlockSize  = 8192
@@ -60,12 +49,12 @@ func (*Processor) Start() error {
 
 			// TODO: forced_volumn num, hash_base_string
 
-			var r = uint64(sd.offset * StoreBlockSize)
+			var r = sd.offset * StoreBlockSize
 			if sd.offset*StoreBlockSize < StartPos {
-				r = uint64(StartPos + sd.alignment)
+				r = int64(StartPos + sd.alignment)
 			}
 			skip := roundToStoreBlock(r)
-			blocks = blocks - int64(skip>>StoreBlockShift)
+			blocks = blocks - skip>>StoreBlockShift
 
 			gdisks[gndisk] = new(CacheDisk)
 			gdisks[gndisk].hashBaseString = sd.hashBaseString

@@ -1,8 +1,9 @@
-package diskparser
+package cache
 
 import (
 	"os"
 	"bufio"
+	"fmt"
 	"log"
 )
 

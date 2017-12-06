@@ -39,6 +39,7 @@ type CacheVol struct {
 	Vols      []*Vol
 	DiskVols  []*DiskVol
 }
+
 type Vol struct {
 	Path              string           `json:"path"`
 	Dir               [][][]*Dir       `json:"-"`
