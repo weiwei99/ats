@@ -4,7 +4,8 @@ GOFILES := $(shell find . -name "*.go" -type f -not -path "./vendor/*")
 
 all: build
 
-install: deps
+install: 
+	go build cc.go
 
 .PHONY: test
 test:
