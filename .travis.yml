@@ -14,7 +14,6 @@ go_import_path: github.com/weiwei99/ats
 script:
   - make vet
   - make fmt-check
-  - make embedmd
   - make misspell-check
   - make test
 
