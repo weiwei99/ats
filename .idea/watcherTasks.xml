@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ProjectTasksOptions">
-    <TaskOptions isEnabled="true">
+    <TaskOptions isEnabled="false">
       <option name="arguments" value="-w $FilePath$" />
       <option name="checkSyntaxErrors" value="true" />
       <option name="description" />
@@ -15,7 +15,6 @@
       </option>
       <option name="outputFromStdout" value="false" />
       <option name="program" value="goimports.exe" />
-      <option name="runOnExternalChanges" value="false" />
       <option name="scopeName" value="Project Files" />
       <option name="trackOnlyRoot" value="true" />
       <option name="workingDir" value="" />
@@ -25,7 +24,7 @@
         <env name="PATH" value="$GoBinDirs$" />
       </envs>
     </TaskOptions>
-    <TaskOptions isEnabled="true">
+    <TaskOptions isEnabled="false">
       <option name="arguments" value="$FileDir$" />
       <option name="checkSyntaxErrors" value="true" />
       <option name="description" />
@@ -39,7 +38,6 @@
       </option>
       <option name="outputFromStdout" value="false" />
       <option name="program" value="gometalinter.exe" />
-      <option name="runOnExternalChanges" value="false" />
       <option name="scopeName" value="Project Files" />
       <option name="trackOnlyRoot" value="true" />
       <option name="workingDir" value="" />
@@ -49,7 +47,7 @@
         <env name="PATH" value="$GoBinDirs$" />
       </envs>
     </TaskOptions>
-    <TaskOptions isEnabled="true">
+    <TaskOptions isEnabled="false">
       <option name="arguments" value="fmt $FilePath$" />
       <option name="checkSyntaxErrors" value="true" />
       <option name="description" />
@@ -63,7 +61,6 @@
       </option>
       <option name="outputFromStdout" value="false" />
       <option name="program" value="$GoExecPath$" />
-      <option name="runOnExternalChanges" value="false" />
       <option name="scopeName" value="Project Files" />
       <option name="trackOnlyRoot" value="true" />
       <option name="workingDir" value="" />

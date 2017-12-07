@@ -32,7 +32,7 @@ lint:
 	@hash golint > /dev/null 2>&1; if [ $$? -ne 0 ]; then \
 		go get -u github.com/golang/lint/golint; \
 	fi
-	for PKG in $(PACKAGES); do golint -set_exit_status $$PKG || exit 1; done;
+	for PKG in $(PACKAGES); do golint $$PKG || exit 1; done;
 
 .PHONY: misspell-check
 misspell-check:

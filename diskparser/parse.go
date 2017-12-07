@@ -28,7 +28,7 @@ func (cparse *CacheParser) open(path string) error {
 	if os.IsNotExist(err) {
 		fd, err := syscall.Open(path, syscall.O_RDONLY, 0777)
 		if err != nil {
-			fmt.Errorf("open raw disk [%s] failed: %s", path, err.Error())
+			fmt.Printf("open raw disk [%s] failed: %s", path, err.Error())
 			return err
 		}
 		cparse.Fd = &fd
@@ -36,7 +36,7 @@ func (cparse *CacheParser) open(path string) error {
 	} else {
 		file, err := os.Open(path)
 		if err != nil {
-			fmt.Errorf("open file :%s failed: %s", path, err.Error())
+			fmt.Printf("open file :%s failed: %s", path, err.Error())
 			return err
 		}
 		cparse.File = file
@@ -76,7 +76,7 @@ func (cparser *CacheParser) ParseCacheDisk(conf Config) error {
 
 	err := cparser.open(conf.Path)
 	if err != nil {
-		fmt.Errorf("open path failed: %s", err.Error())
+		fmt.Printf("open path failed: %s", err.Error())
 		return err
 	}
 
@@ -272,7 +272,7 @@ func (cparser *CacheParser) VolHeaderRead(vol *Vol) ([]*VolHeaderFooter, error) 
 	}
 
 	if vol.Header.Magic != VOL_MAGIC || vol.Footer.Magic != VOL_MAGIC {
-		return nil, fmt.Errorf("head or footer magic not match %s, used first head: %s"+
+		return nil, fmt.Errorf("head or footer magic not match %d, used first head: %v"+
 			" head pos: %d, foot pos: %d",
 			VOL_MAGIC, isFirst, vol.Header.AnalyseDiskOffset, vol.Footer.AnalyseDiskOffset)
 	}

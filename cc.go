@@ -12,7 +12,7 @@ func ParseDoc(path string) {
 	fd, err := syscall.Open(path, syscall.O_RDONLY, 0777)
 
 	if err != nil {
-		fmt.Errorf("open path failed: %s", err.Error())
+		fmt.Printf("open path failed: %s", err.Error())
 		return
 	}
 
@@ -21,13 +21,13 @@ func ParseDoc(path string) {
 	buffer := make([]byte, 40960)
 	_, err = syscall.Read(fd, buffer)
 	if err != nil {
-		fmt.Errorf("read disk header failed: %s", err.Error())
+		fmt.Printf("read disk header failed: %s", err.Error())
 		return
 	}
 
 	doc, err := diskparser.NewDoc(buffer)
 	if err != nil {
-		fmt.Errorf("create doc failed: %s", err.Error())
+		fmt.Printf("create doc failed: %s", err.Error())
 		return
 	}
 	docstr, err := json.Marshal(doc)
