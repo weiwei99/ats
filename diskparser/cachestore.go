@@ -1,17 +1,17 @@
 package diskparser
 
 import (
-	"os"
 	"bufio"
 	"log"
+	"os"
 )
 
 var store Store
 
 type Store struct {
-	nDisks int
+	nDisks         int
 	nDisksInConfig int
-	disk   []*Span
+	disk           []*Span
 }
 
 func (s *Store) readConfig() error {

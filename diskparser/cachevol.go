@@ -107,11 +107,11 @@ func (d *Vol) DirEntries() int {
 func (d *Vol) allocDir() {
 	// 预申请空间
 	d.Dir = make([][][]*Dir, d.Segments)
-	for idxs, _ := range d.Dir {
+	for idxs := range d.Dir {
 		d.Dir[idxs] = make([][]*Dir, d.Buckets)
-		for idxb, _ := range d.Dir[idxs] {
+		for idxb := range d.Dir[idxs] {
 			d.Dir[idxs][idxb] = make([]*Dir, DIR_DEPTH)
-			for idxd, _ := range d.Dir[idxs][idxb] {
+			for idxd := range d.Dir[idxs][idxb] {
 				d.Dir[idxs][idxb][idxd] = &Dir{
 					IdxSegment: idxs,
 					IdxBucket:  idxb,

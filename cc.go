@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	//"git.jd.com/pid-cdn/fortest/ats"
 	"github.com/weiwei99/ats/diskparser"
 	"syscall"
 )

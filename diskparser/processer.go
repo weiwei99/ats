@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"git.jd.com/pid-cdn/ats/lib/ts"
 	"github.com/golang/glog"
+	"github.com/weiwei99/ats/lib/ts"
 )
 
 type CacheProcesser struct {
