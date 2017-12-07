@@ -96,7 +96,7 @@ func (cparser *CacheParser) ParseCacheDisk(conf Config) error {
 		fmt.Println(err)
 		return err
 	}
-	cdisk.Path = conf.Path
+	cdisk.path = conf.Path
 	cdiskInfo, err := json.Marshal(cdisk)
 	fmt.Println(string(cdiskInfo))
 
@@ -139,11 +139,11 @@ func (cparser *CacheParser) ParseVol(buffer []byte, cacheDisk *CacheDisk, conf *
 		return nil, fmt.Errorf("create vol failed: %s", err.Error())
 	}
 	vol.Conf = conf
-	vol.Len = int64(cacheDisk.Header.VolInfo.Len * STORE_BLOCK_SIZE)
+	vol.Len = int64(cacheDisk.header.VolInfo[0].Len * STORE_BLOCK_SIZE)
 	vol.Disk = cacheDisk
-	vol.Skip = int64(cacheDisk.Header.VolInfo.Offset)
+	vol.Skip = int64(cacheDisk.header.VolInfo[0].Offset)
 	vol.PrevRecoverPos = 0
-	vol.Start = int64(cacheDisk.Header.VolInfo.Offset)
+	vol.Start = int64(cacheDisk.header.VolInfo[0].Offset)
 
 	// 分析大小
 	vol.initData()

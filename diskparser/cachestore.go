@@ -47,9 +47,11 @@ func (s *Store) readConfig() error {
 
 	if err := scanner.Err(); err != nil {
 		log.Fatal(err)
+		return err
 	}
 
 	s.sort()
+	return nil
 }
 
 func (s *Store) sort() {

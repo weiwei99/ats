@@ -38,7 +38,7 @@ type Processor struct {
 }
 
 func roundToStoreBlock(r uint64) uint64 {
-	return ts.InkAlign(r, StoreBlockSize)
+	return uint64(ts.InkAlign(int64(r), StoreBlockSize))
 }
 
 func (*Processor) Start() error {
@@ -70,7 +70,7 @@ func (*Processor) Start() error {
 			gdisks[gndisk] = new(CacheDisk)
 			gdisks[gndisk].hashBaseString = sd.hashBaseString
 
-			gdisks[gndisk].open(sd.pathname, blocks, skip, sd.hwSectorSize, f, false)
+			gdisks[gndisk].open(sd.pathname, off_t(blocks), skip, int32(sd.hwSectorSize), f, false)
 
 			gndisk++
 
@@ -85,7 +85,7 @@ func (*Processor) Start() error {
 		return fmt.Errorf("unable to open cache disks: Cache disabled")
 	}
 
-	startDone = 1
+	startDone = true
 
 	return nil
 }

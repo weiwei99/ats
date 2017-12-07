@@ -298,6 +298,7 @@ func (d *CacheDisk) open(path string, blocks, askip off_t, ahwSectorSize int32, 
 	}
 
 	d.updateHeader()
+	return nil
 }
 
 type DiskVolBlockQueue struct {

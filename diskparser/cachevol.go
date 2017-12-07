@@ -194,7 +194,7 @@ func (v *Vol) DirCheck(afix bool) int {
 		last = t
 		free += v.DirFreelistLength(s)
 	}
-	fmt.Printf(" Directory for [%s %d:%d]\n", v.Disk.Path, v.Disk.Header.VolInfo.Offset, v.Disk.Header.VolInfo.Len)
+	fmt.Printf(" Directory for [%s %d:%d]\n", v.Disk.path, v.Disk.header.VolInfo[0].Offset, v.Disk.header.VolInfo[0].Len)
 	fmt.Printf(" Bytes: [%d]\n", v.Buckets*int64(v.Segments)*DIR_DEPTH*SIZEOF_DIR)
 	fmt.Printf(" Segments: %d\n", int64(v.Segments))
 	fmt.Printf(" Buckets %d\n", v.Buckets)
