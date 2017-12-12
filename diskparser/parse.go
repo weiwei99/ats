@@ -296,20 +296,15 @@ func (cparser *CacheParser) ParseFullDir(v *Vol) error {
 			fmt.Println("load content failed")
 			return fmt.Errorf("load content failed: %s", err.Error())
 		}
-		conStr, _ := json.Marshal(con)
-		fmt.Println(string(conStr))
+		//conStr, _ := json.Marshal(con)
+		//fmt.Println(string(conStr))
 
 		if con.Magic != DOC_MAGIC {
 			return fmt.Errorf("doc magic not match")
 		}
-		v.Content = append(v.Content, con)
-	}
+		//v.Content = append(v.Content, con)
 
-	fmt.Printf("total content: %d\n", len(v.Content))
-
-	first := make([]*HTTPCacheAlt, 0)
-	for _, c := range v.Content {
-		hh, err := cparser.ParseHttpInfoHeader(c)
+		hh, err := cparser.ParseHttpInfoHeader(con)
 		if err != nil {
 			fmt.Printf("parse http info %s\n", err.Error())
 			continue
@@ -317,21 +312,36 @@ func (cparser *CacheParser) ParseFullDir(v *Vol) error {
 		if hh.Magic != CACHE_ALT_MAGIC_MARSHALED {
 			continue
 		}
-		first = append(first, hh)
 
 	}
 
-	for _, hh := range first {
-		histr, _ := json.Marshal(hh)
-		fmt.Println(string(histr))
-	}
+	fmt.Printf("total content: %d\n", len(v.Content))
+	//
+	//first := make([]*HTTPCacheAlt, 0)
+	//for _, c := range v.Content {
+	//	hh, err := cparser.ParseHttpInfoHeader(c)
+	//	if err != nil {
+	//		fmt.Printf("parse http info %s\n", err.Error())
+	//		continue
+	//	}
+	//	if hh.Magic != CACHE_ALT_MAGIC_MARSHALED {
+	//		continue
+	//	}
+	//	first = append(first, hh)
+	//
+	//}
+
+	//for _, hh := range first {
+	//	histr, _ := json.Marshal(hh)
+	//	fmt.Println(string(histr))
+	//}
 	return nil
 }
 
 func (cparser *CacheParser) ParseHttpInfoHeader(d *Doc) (*HTTPCacheAlt, error) {
 	startPos := d.YYDiskOffset + 72
 
-	buf, err := cparser.read(startPos, 1400)
+	buf, err := cparser.read(startPos, 5000)
 	if err != nil {
 		return nil, err
 	}
