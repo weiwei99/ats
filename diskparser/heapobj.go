@@ -3,7 +3,6 @@ package diskparser
 import (
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 )
 
@@ -36,10 +35,15 @@ type HTTPHdrImp struct {
 	MVersion     int32  `json:"m_version"`
 	MethodOffset uint64 `json:"method_offset"`
 
+	// request
 	URLImplOffset uint64 `json:"url_impl_offset"`
 	MethodLen     uint16 `json:"method_len"`
 	MethodWKSIdx  int16  `json:"method_wks_idx"`
 	Method        string `json:"method"`
+
+	// response
+	Status     int16  `json:"status"`
+	MLenReason uint16 `json:"m_len_reason"`
 	//0x7fffeae001d8
 	//m_url_impl = 0x308
 	//m_ptr_method //0x7fffeae004b8
@@ -133,9 +137,6 @@ func (hhdr *HdrHeapObjHeader) UnmarshalURL(buffer []byte) error {
 	}
 
 	hhdr.HdrHeep.URL = url
-
-	urlstr, _ := json.Marshal(url)
-	fmt.Println(string(urlstr))
 	return nil
 }
 
@@ -148,7 +149,7 @@ func (hhdr *HdrHeapObjHeader) UnmarshalMIME(buffer []byte) error {
 	curPos := 0
 	// skip 8 bytes
 	curPos += 8
-	fmt.Println(hex.Dump(buffer))
+	//fmt.Println(hex.Dump(buffer))
 	mime.MPresenceBits = binary.LittleEndian.Uint64(buffer[curPos : curPos+8])
 	curPos += 8     // m_presence_bits
 	curPos += 4 * 4 // m_slot_accelerators
@@ -157,11 +158,13 @@ func (hhdr *HdrHeapObjHeader) UnmarshalMIME(buffer []byte) error {
 
 	mime.MFirstFblock.MFreetop = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
 
-	fmt.Println(mime)
+	//mimestr, _ := json.Marshal(mime)
+	//fmt.Println(string(mimestr))
 	return nil
 }
 
 func (hhdr *HdrHeapObjHeader) UnmarshalHTTPHdr(buffer []byte) error {
+	hex.Dump(buffer)
 	hdr := &HTTPHdrImp{}
 	curPos := 0
 	hdr.MPolarity = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
@@ -169,8 +172,23 @@ func (hhdr *HdrHeapObjHeader) UnmarshalHTTPHdr(buffer []byte) error {
 	hdr.MVersion = int32(binary.LittleEndian.Uint32(buffer[curPos : curPos+4]))
 	curPos += 4
 
-	// 便宜
+	// 偏移
 	curPos += 4
+	// C语言中是union结构体
+	if hdr.MPolarity == 1 {
+		hhdr.UnmarshalRequestHTTPHdr(hdr, buffer[curPos:])
+	} else if hdr.MPolarity == 2 {
+		hhdr.UnmarshalResponseHTTPHdr(hdr, buffer[curPos:])
+	}
+
+	//st, _ := json.Marshal(hdr)
+	//fmt.Println(string(st))
+	return nil
+}
+
+func (hhdr *HdrHeapObjHeader) UnmarshalRequestHTTPHdr(hdr *HTTPHdrImp, buffer []byte) {
+	curPos := 0
+
 	//
 	hdr.URLImplOffset = binary.LittleEndian.Uint64(buffer[curPos : curPos+8])
 	curPos += 8
@@ -182,7 +200,21 @@ func (hhdr *HdrHeapObjHeader) UnmarshalHTTPHdr(buffer []byte) error {
 	hdr.MethodWKSIdx = int16(binary.LittleEndian.Uint16(buffer[curPos : curPos+2]))
 	curPos += 2
 
-	st, _ := json.Marshal(hdr)
-	fmt.Println(string(st))
-	return nil
+	//st, _ := json.Marshal(hdr)
+	//fmt.Println(string(st))
+}
+
+func (hhdr *HdrHeapObjHeader) UnmarshalResponseHTTPHdr(hdr *HTTPHdrImp, buffer []byte) {
+	curPos := 0
+	//u.resp.m_ptr_reason 8个字节
+	curPos += 8
+	//fmt.Println(hex.Dump(buffer))
+
+	hdr.MLenReason = binary.LittleEndian.Uint16(buffer[curPos : curPos+2])
+	curPos += 2
+	hdr.Status = int16(binary.LittleEndian.Uint16(buffer[curPos : curPos+2]))
+
+	if hdr.Status != 0 && hdr.Status != 200 && hdr.Status != 206 {
+		fmt.Printf("WARNING.......%d\n", hdr.Status)
+	}
 }

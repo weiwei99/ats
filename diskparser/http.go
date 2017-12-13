@@ -2,7 +2,6 @@ package diskparser
 
 import (
 	"encoding/binary"
-	//"encoding/hex"
 	"fmt"
 )
 
@@ -61,43 +60,72 @@ func (hca *HTTPCacheAlt) LoadFromBuffer(buffer []byte) error {
 		return nil
 	}
 
-	reqh := &HTTPHdr{}
-	hca.RequestHdr = reqh
+	// request header process
+	//fmt.Println("------begin parse request info----")
+	requestHeader := &HTTPHdr{}
+	hca.RequestHdr = requestHeader
 
-	reqh.YYDiskOffset = hca.YYDiskOffset + 48
+	requestHeader.YYDiskOffset = hca.YYDiskOffset + 48
 	curPos = 48
-	reqh.HeapPos = int64(binary.LittleEndian.Uint64(buffer[curPos : curPos+8]))
-
-	reqh.HdrHeep = &HdrHeep{}
+	requestHeader.HeapPos = int64(binary.LittleEndian.Uint64(buffer[curPos : curPos+8]))
 	// len = 2216
-	curPos = reqh.HeapPos
-	reqh.HdrHeep.YYDiskOffset = hca.YYDiskOffset + reqh.HeapPos // 248
-
-	reqh.HdrHeep.Magic = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
-
-	if reqh.HdrHeep.Magic != HDR_BUF_MAGIC_MARSHALED {
-		fmt.Println("hdr heep magic error")
-		return fmt.Errorf("hdr heep magic error11111")
+	curPos = requestHeader.HeapPos
+	reqHeap, err := UnmarshalHeap(buffer[curPos:])
+	if err != nil {
+		return err
 	}
-	reqh.HdrHeep.RawBytes = buffer[curPos:]
+	reqHeap.YYDiskOffset = hca.YYDiskOffset + requestHeader.HeapPos // 248
+	requestHeader.HdrHeep = reqHeap
+
+	// response header process
+	//fmt.Println("------begin parse reponse info----")
+	responseHeader := &HTTPHdr{}
+	hca.RequestHdr = responseHeader
+	responseHeader.YYDiskOffset = hca.YYDiskOffset + 112
+	curPos = 112
+	responseHeader.HeapPos = int64(binary.LittleEndian.Uint64(buffer[curPos : curPos+8]))
+	curPos = responseHeader.HeapPos
+	respHeap, err := UnmarshalHeap(buffer[curPos:])
+	if err != nil {
+		return err
+	}
+	respHeap.YYDiskOffset = hca.YYDiskOffset + requestHeader.HeapPos // 248
+	responseHeader.HdrHeep = respHeap
+
+	//if responseHeader.HdrHeep.St
+	return nil
+}
+
+func UnmarshalHeap(buffer []byte) (*HdrHeep, error) {
+	hdrHeap := &HdrHeep{}
+	curPos := 0
+
+	hdrHeap.Magic = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+
+	if hdrHeap.Magic != HDR_BUF_MAGIC_MARSHALED {
+		fmt.Println("hdr heep magic error")
+		return nil, fmt.Errorf("hdr heep magic error11111")
+	}
+	hdrHeap.RawBytes = buffer[curPos:]
 	curPos += 4
 	curPos += 4 // 4个结构体对齐
 	// 跳过两个指针空间
-	reqh.HdrHeep.MFreeStart = binary.LittleEndian.Uint64(buffer[curPos : curPos+8])
+	hdrHeap.MFreeStart = binary.LittleEndian.Uint64(buffer[curPos : curPos+8])
 	curPos += 8
-	reqh.HdrHeep.MDataStart = binary.LittleEndian.Uint64(buffer[curPos : curPos+8])
+	hdrHeap.MDataStart = binary.LittleEndian.Uint64(buffer[curPos : curPos+8])
 	curPos += 8
 	//
-	reqh.HdrHeep.MSize = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	hdrHeap.MSize = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
 
 	curPos += 4
 	//reqhstr, _ := json.Marshal(reqh)
 	//fmt.Println(string(reqhstr))
 
-	reqh.HdrHeep.MFreeStart = uint64(reqh.HdrHeep.MSize)
-	heapobjbuf := buffer[uint64(reqh.HeapPos)+reqh.HdrHeep.MDataStart : uint64(reqh.HeapPos)+reqh.HdrHeep.MFreeStart]
+	hdrHeap.MFreeStart = uint64(hdrHeap.MSize)
 
-	grap := (reqh.HdrHeep.MFreeStart - reqh.HdrHeep.MDataStart)
+	heapobjbuf := buffer[hdrHeap.MDataStart:hdrHeap.MFreeStart]
+
+	grap := hdrHeap.MFreeStart - hdrHeap.MDataStart
 
 	//fmt.Println(hex.Dump(heapobjbuf[0:1]))
 	//return nil
@@ -105,8 +133,8 @@ func (hca *HTTPCacheAlt) LoadFromBuffer(buffer []byte) error {
 	//return nil
 	for {
 		cc := &HdrHeapObjHeader{}
-		cc.YYDiskOffset = reqh.YYDiskOffset + int64(reqh.HdrHeep.MDataStart) + next
-		cc.HdrHeep = reqh.HdrHeep
+		//cc.YYDiskOffset = reqh.YYDiskOffset + int64(hdrHeap.MDataStart) + next
+		cc.HdrHeep = hdrHeap
 
 		err := cc.Load(heapobjbuf[next:grap])
 		//fmt.Println(hex.Dump(heapobjbuf[next:grap]))
@@ -124,12 +152,7 @@ func (hca *HTTPCacheAlt) LoadFromBuffer(buffer []byte) error {
 		}
 		//break
 	}
-
-	resh := &HTTPHdr{}
-	hca.RequestHdr = resh
-	resh.YYDiskOffset = hca.YYDiskOffset + 112
-
-	return nil
+	return hdrHeap, nil
 }
 
 func (hhdr *HdrHeapObjHeader) Load(buffer []byte) error {
@@ -150,8 +173,8 @@ func (hhdr *HdrHeapObjHeader) Load(buffer []byte) error {
 	curPos += 4
 	hhdr.Content = buffer[curPos : curPos+int(hhdr.MLength)]
 
-	fmt.Printf("begin parse: %d, content len: %d, object flag: %d\n",
-		hhdr.MType, hhdr.MLength, hhdr.MObjFlags)
+	//fmt.Printf("begin parse: %d, content len: %d, object flag: %d\n",
+	//	hhdr.MType, hhdr.MLength, hhdr.MObjFlags)
 	if hhdr.MType == uint32(HDR_HEAP_OBJ_URL) {
 		err := hhdr.UnmarshalURL(hhdr.Content)
 		if err != nil {
