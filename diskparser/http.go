@@ -103,7 +103,7 @@ func (hca *HTTPCacheAlt) LoadFromBuffer(buffer []byte) error {
 		if v.MType == uint32(HDR_HEAP_OBJ_HTTP_HEADER) {
 			status := int(v.HttpHdr.Status)
 			if status != 200 && status != 206 {
-				fmt.Printf("Code: %d, Url: %s://%s%s?%s\n",
+				fmt.Printf("Code: %d, Url: %s://%s/%s?%s\n",
 					status,
 					requestHeader.HdrHeep.URL.Scheme,
 					requestHeader.HdrHeep.URL.Host,

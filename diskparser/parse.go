@@ -4,8 +4,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"os"
-	"syscall"
 )
 
 const (
@@ -13,68 +11,24 @@ const (
 )
 
 type CacheParser struct {
-	Path  string
-	File  *os.File
-	Fd    *int
+	Paths []string
 	Start uint64
+	Dio   *DiskReader
+}
+
+func NewCacheParser() (*CacheParser, error) {
+	cp := &CacheParser{}
+	return cp, nil
 }
 
 func (cparser *CacheParser) ParseMain(path string) error {
 	return nil
 }
 
-func (cparse *CacheParser) open(path string) error {
-	_, err := os.Stat("path")
-	if os.IsNotExist(err) {
-		fd, err := syscall.Open(path, syscall.O_RDONLY, 0777)
-		if err != nil {
-			fmt.Errorf("open raw disk [%s] failed: %s", path, err.Error())
-			return err
-		}
-		cparse.Fd = &fd
-		cparse.File = nil
-	} else {
-		file, err := os.Open(path)
-		if err != nil {
-			fmt.Errorf("open file :%s failed: %s", path, err.Error())
-			return err
-		}
-		cparse.File = file
-		cparse.Fd = nil
-	}
-	return nil
-}
-
-func (cparser *CacheParser) read(offset, size int64) ([]byte, error) {
-
-	ret := make([]byte, size)
-	if cparser.Fd != nil {
-		pos, err := syscall.Seek(*cparser.Fd, offset, 0)
-		if err != nil {
-			return ret, fmt.Errorf("seek to cache dis header failed: %s", err.Error())
-		}
-		if pos != offset {
-			return ret, fmt.Errorf("pos not much: %d", offset)
-		}
-		numRead, err := syscall.Read(*cparser.Fd, ret)
-		if err != nil {
-			err = fmt.Errorf("read buffer failed: %s", err.Error())
-			return ret, err
-		}
-		if int64(numRead) != size {
-			err = fmt.Errorf("read buffer length not match: %d, %d", numRead, size)
-			return ret, err
-		}
-	} else {
-
-	}
-	return ret, nil
-}
-
 func (cparser *CacheParser) ParseCacheDisk(conf Config) error {
-	cparser.Path = conf.Path
+	//cparser.Path = conf.Path
 
-	err := cparser.open(conf.Path)
+	err := cparser.Dio.open(conf.Path)
 	if err != nil {
 		fmt.Errorf("open path failed: %s", err.Error())
 		return err
@@ -85,7 +39,7 @@ func (cparser *CacheParser) ParseCacheDisk(conf Config) error {
 	cparser.Start += START
 	var cacheDiskHeaderLen = 56
 
-	buffer, err := cparser.read(START, int64(cacheDiskHeaderLen))
+	buffer, err := cparser.Dio.read(START, int64(cacheDiskHeaderLen))
 	if err != nil {
 		fmt.Println(err)
 		return err
@@ -108,8 +62,7 @@ func (cparser *CacheParser) ParseCacheDisk(conf Config) error {
 		fmt.Println(err)
 		return err
 	}
-	//
-	fmt.Println("+++++++++++++++")
+
 	// 加载Dir
 	cparser.LoadDir(vol)
 	// 检查Dir是否健康
@@ -163,7 +116,7 @@ func (cparser *CacheParser) ParseVol(buffer []byte, cacheDisk *CacheDisk, conf *
 	vol.Header.FreeList = make([]uint16, vol.Segments)
 	// Freelist在 80-72的位置
 	freelistBufPos := vol.Header.AnalyseDiskOffset + (SIZEOF_VolHeaderFooter - 8)
-	freelistBuf, err := cparser.read(freelistBufPos, int64(vol.Segments)*2)
+	freelistBuf, err := cparser.Dio.read(freelistBufPos, int64(vol.Segments)*2)
 	for i := 0; i < vol.Segments; i++ {
 		vol.Header.FreeList[i] = binary.LittleEndian.Uint16(freelistBuf[i*2 : i*2+2])
 	}
@@ -180,7 +133,7 @@ func (cparser *CacheParser) LoadDir(vol *Vol) error {
 	// Scan Dir
 	vol.DirPos = vol.Header.AnalyseDiskOffset + int64(RoundToStoreBlock(SIZEOF_VolHeaderFooter))
 
-	abuf, err := cparser.read(vol.DirPos, int64(vol.DirEntries()*SIZEOF_DIR))
+	abuf, err := cparser.Dio.read(vol.DirPos, int64(vol.DirEntries()*SIZEOF_DIR))
 	if err != nil {
 		return fmt.Errorf("seek to cache disk header failed: %s", err.Error())
 	}
@@ -204,7 +157,7 @@ func (cparser *CacheParser) VolHeaderRead(vol *Vol) ([]*VolHeaderFooter, error) 
 
 	// A HEADER
 	aHeadPos := vol.Skip
-	hfBuffer, err := cparser.read(aHeadPos, hfBufferLen)
+	hfBuffer, err := cparser.Dio.read(aHeadPos, hfBufferLen)
 	if err != nil {
 		return nil, fmt.Errorf("seek to cache dis header failed: %s", err.Error())
 	}
@@ -217,7 +170,7 @@ func (cparser *CacheParser) VolHeaderRead(vol *Vol) ([]*VolHeaderFooter, error) 
 
 	// A FOOTER
 	aFootPos := aHeadPos + int64(footerOffset)
-	hfBuffer, err = cparser.read(aFootPos, hfBufferLen)
+	hfBuffer, err = cparser.Dio.read(aFootPos, hfBufferLen)
 	if err != nil {
 		return nil, fmt.Errorf("seek to cache disk header failed: %s", err.Error())
 	}
@@ -230,7 +183,7 @@ func (cparser *CacheParser) VolHeaderRead(vol *Vol) ([]*VolHeaderFooter, error) 
 
 	// B HEADER
 	bHeadPos := vol.Skip + int64(vol.DirLen())
-	hfBuffer, err = cparser.read(bHeadPos, hfBufferLen)
+	hfBuffer, err = cparser.Dio.read(bHeadPos, hfBufferLen)
 	if err != nil {
 		return nil, fmt.Errorf("seek to cache disk header failed: %s", err.Error())
 	}
@@ -243,7 +196,7 @@ func (cparser *CacheParser) VolHeaderRead(vol *Vol) ([]*VolHeaderFooter, error) 
 
 	// B FOOTER
 	bFootPos := bHeadPos + int64(footerOffset)
-	hfBuffer, err = cparser.read(bFootPos, hfBufferLen)
+	hfBuffer, err = cparser.Dio.read(bFootPos, hfBufferLen)
 	if err != nil {
 		return nil, fmt.Errorf("seek to cache disk header failed: %s", err.Error())
 	}
@@ -287,7 +240,7 @@ func (cparser *CacheParser) ParseFullDir(v *Vol) error {
 		docPos := int64(d.Offset-1)*DEFAULT_HW_SECTOR_SIZE + v.ContentStartPos
 		con := &Doc{}
 		con.YYDiskOffset = docPos
-		buff, err := cparser.read(con.YYDiskOffset, 72)
+		buff, err := cparser.Dio.read(con.YYDiskOffset, 72)
 		if err != nil {
 			return err
 		}
@@ -319,6 +272,7 @@ func (cparser *CacheParser) ParseFullDir(v *Vol) error {
 	}
 
 	fmt.Printf("total content: %d\n", len(v.Content))
+	fmt.Printf("DiskReader: %s\n", cparser.Dio.DumpStat())
 	//
 	//first := make([]*HTTPCacheAlt, 0)
 	//for _, c := range v.Content {
@@ -345,7 +299,7 @@ func (cparser *CacheParser) ParseHttpInfoHeader(d *Doc) (*HTTPCacheAlt, error) {
 	startPos := d.YYDiskOffset + 72
 
 	//fmt.Printf("dir h len: %d\n", d.HLen)
-	buf, err := cparser.read(startPos, int64(d.HLen))
+	buf, err := cparser.Dio.read(startPos, int64(d.HLen))
 	if err != nil {
 		return nil, err
 	}
@@ -355,4 +309,8 @@ func (cparser *CacheParser) ParseHttpInfoHeader(d *Doc) (*HTTPCacheAlt, error) {
 	hi.LoadFromBuffer(buf)
 
 	return hi, nil
+}
+
+func (cparser *CacheParser) DumpParser() string {
+	return ""
 }

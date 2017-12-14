@@ -44,6 +44,10 @@ func main() {
 
 	// 分析
 	cp := diskparser.CacheParser{}
+	dio := &diskparser.DiskReader{}
+	cp.Dio = dio
+
+	//
 	err := cp.ParseCacheDisk(conf)
 	if err != nil {
 		fmt.Println(err)
