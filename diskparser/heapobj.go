@@ -3,7 +3,6 @@ package diskparser
 import (
 	"encoding/binary"
 	"encoding/hex"
-	"fmt"
 )
 
 type HDR_HEAP_OBJ_TYPE int
@@ -181,6 +180,7 @@ func (hhdr *HdrHeapObjHeader) UnmarshalHTTPHdr(buffer []byte) error {
 		hhdr.UnmarshalResponseHTTPHdr(hdr, buffer[curPos:])
 	}
 
+	hhdr.HttpHdr = hdr
 	//st, _ := json.Marshal(hdr)
 	//fmt.Println(string(st))
 	return nil
@@ -214,7 +214,4 @@ func (hhdr *HdrHeapObjHeader) UnmarshalResponseHTTPHdr(hdr *HTTPHdrImp, buffer [
 	curPos += 2
 	hdr.Status = int16(binary.LittleEndian.Uint16(buffer[curPos : curPos+2]))
 
-	if hdr.Status != 0 && hdr.Status != 200 && hdr.Status != 206 {
-		fmt.Printf("WARNING.......%d\n", hdr.Status)
-	}
 }

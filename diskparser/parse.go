@@ -302,6 +302,9 @@ func (cparser *CacheParser) ParseFullDir(v *Vol) error {
 		if con.Magic != DOC_MAGIC {
 			return fmt.Errorf("doc magic not match")
 		}
+		if con.HLen == 0 {
+			continue
+		}
 		//v.Content = append(v.Content, con)
 
 		hh, err := cparser.ParseHttpInfoHeader(con)
@@ -341,7 +344,8 @@ func (cparser *CacheParser) ParseFullDir(v *Vol) error {
 func (cparser *CacheParser) ParseHttpInfoHeader(d *Doc) (*HTTPCacheAlt, error) {
 	startPos := d.YYDiskOffset + 72
 
-	buf, err := cparser.read(startPos, 5000)
+	//fmt.Printf("dir h len: %d\n", d.HLen)
+	buf, err := cparser.read(startPos, int64(d.HLen))
 	if err != nil {
 		return nil, err
 	}
