@@ -14,6 +14,8 @@ type CacheParser struct {
 	Paths []string
 	Start uint64
 	Dio   *DiskReader
+
+	cdisk *CacheDisk
 }
 
 func NewCacheParser() (*CacheParser, error) {
@@ -25,9 +27,21 @@ func (cparser *CacheParser) ParseMain(path string) error {
 	return nil
 }
 
-func (cparser *CacheParser) ParseCacheDisk(conf Config) error {
-	//cparser.Path = conf.Path
+func (cparser *CacheParser) ParseCacheDiskHeader(buffer []byte) (*CacheDisk, error) {
+	cdisk, err := NewCacheDisk()
+	if err != nil {
+		return nil, err
+	}
+	err = cdisk.Load(buffer)
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+	return cdisk, nil
+}
 
+func (cparser *CacheParser) ParseRawDisk(conf Config) error {
+	// 打开磁盘
 	err := cparser.Dio.open(conf.Path)
 	if err != nil {
 		fmt.Errorf("open path failed: %s", err.Error())
@@ -35,79 +49,75 @@ func (cparser *CacheParser) ParseCacheDisk(conf Config) error {
 	}
 
 	cparser.Start = 0
-	// 分析CacheDisk的Header
+	// 跳过磁盘头
 	cparser.Start += START
-	var cacheDiskHeaderLen = 56
-
-	buffer, err := cparser.Dio.read(START, int64(cacheDiskHeaderLen))
+	// 分析CacheDisk的Header
+	buffer, err := cparser.Dio.read(START, int64(DiskHeaderLen))
 	if err != nil {
 		fmt.Println(err)
 		return err
 	}
-
-	cdisk, err := NewCacheDiskFromBuffer(buffer)
+	cdisk, err := cparser.ParseCacheDiskHeader(buffer)
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
+	cdisk.PsDiskOffsetStart = int64(cparser.Start)
+	cdisk.PsDiskOffsetEnd = int64(cparser.Start + DiskHeaderLen)
 	cdisk.Path = conf.Path
+	cparser.cdisk = cdisk
 	cdiskInfo, err := json.Marshal(cdisk)
 	fmt.Println(string(cdiskInfo))
 
-	cparser.Start = cparser.Start + uint64(cacheDiskHeaderLen)
-
 	// 分析Vol的Header
-	vol, err := cparser.ParseVol(nil, cdisk, &conf)
+	cparser.Start = cparser.Start + uint64(DiskHeaderLen)
+	vol, err := cparser.ParseVol(cdisk, &conf)
 	if err != nil {
 		fmt.Println(err)
 		return err
 	}
+	cdisk.YYVol = vol
 
 	// 加载Dir
-	cparser.LoadDir(vol)
-	// 检查Dir是否健康
-	success := vol.CheckDir()
-	fmt.Printf("check dir: %v\n", success)
-	// 统计Dir情况
-	vol.DirCheck(false)
-	volStr, _ := json.Marshal(vol)
-	fmt.Println(string(volStr))
-
-	// 分析content obj
-	err = cparser.ParseFullDir(vol)
-	if err != nil {
-		fmt.Println(err)
-		return err
-	}
+	cparser.ParseDir(vol)
 	return nil
 }
 
-func (cparser *CacheParser) ParseVol(buffer []byte, cacheDisk *CacheDisk, conf *Config) (*Vol, error) {
+// 检查DIR是否健康
+func (cparser *CacheParser) CheckDir() {
+	vol := cparser.cdisk.YYVol
+	success := vol.CheckDir()
+	fmt.Printf("check dir: %v\n", success)
+}
+
+// 统计DIR的状态
+func (cparser *CacheParser) DirStat() {
+	vol := cparser.cdisk.YYVol
+	vol.DirCheck(false)
+	volStr, _ := json.Marshal(vol)
+	fmt.Println(string(volStr))
+}
+
+// 分析content obj
+func (cparser *CacheParser) ScanHttpObject() {
+	err := cparser.ParseFullDir(cparser.cdisk.YYVol)
+	if err != nil {
+		fmt.Println(err)
+	}
+}
+
+// 需要借助cache disk中的信息来parse vol
+func (cparser *CacheParser) ParseVol(cacheDisk *CacheDisk, conf *Config) (*Vol, error) {
 	if cacheDisk == nil {
 		return nil, fmt.Errorf("parse vol failed, cache disk is nil")
 	}
 
-	vol, err := NewVol()
+	vol, err := NewVol(cacheDisk, conf.MinAverageObjectSize)
 	if err != nil {
 		return nil, fmt.Errorf("create vol failed: %s", err.Error())
 	}
-	vol.Conf = conf
-	vol.Len = int64(cacheDisk.Header.VolInfo.Len * STORE_BLOCK_SIZE)
-	vol.Disk = cacheDisk
-	vol.Skip = int64(cacheDisk.Header.VolInfo.Offset)
-	vol.PrevRecoverPos = 0
-	vol.Start = int64(cacheDisk.Header.VolInfo.Offset)
-
-	// 分析大小
-	vol.initData()
-
-	vol.DataBlocks = vol.Len - (vol.Start-vol.Skip)/STORE_BLOCK_SIZE
-
-	cache_config_hit_evacuate_percent := 10
-	vol.HitEvacuateWindow = int(vol.DataBlocks) * cache_config_hit_evacuate_percent / 100
 
 	// 分析header
-	_, err = cparser.VolHeaderRead(vol)
+	_, err = cparser.loadVolHeader(vol)
 	if err != nil {
 		return nil, fmt.Errorf("vol header read failed: %s", err.Error())
 	}
@@ -129,10 +139,9 @@ func (cparser *CacheParser) ParseVol(buffer []byte, cacheDisk *CacheDisk, conf *
 	return vol, nil
 }
 
-func (cparser *CacheParser) LoadDir(vol *Vol) error {
+func (cparser *CacheParser) ParseDir(vol *Vol) error {
 	// Scan Dir
 	vol.DirPos = vol.Header.AnalyseDiskOffset + int64(RoundToStoreBlock(SIZEOF_VolHeaderFooter))
-
 	abuf, err := cparser.Dio.read(vol.DirPos, int64(vol.DirEntries()*SIZEOF_DIR))
 	if err != nil {
 		return fmt.Errorf("seek to cache disk header failed: %s", err.Error())
@@ -144,7 +153,7 @@ func (cparser *CacheParser) LoadDir(vol *Vol) error {
 	return nil
 }
 
-func (cparser *CacheParser) VolHeaderRead(vol *Vol) ([]*VolHeaderFooter, error) {
+func (cparser *CacheParser) loadVolHeader(vol *Vol) ([]*VolHeaderFooter, error) {
 
 	ret := make([]*VolHeaderFooter, 4)
 	//

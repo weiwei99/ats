@@ -40,25 +40,26 @@ type CacheVol struct {
 	DiskVols  []*DiskVol
 }
 type Vol struct {
-	Path              string           `json:"path"`
-	Dir               [][][]*Dir       `json:"-"`
-	DirPos            int64            `json:"dir_pos"`
-	Header            *VolHeaderFooter `json:"header"`
-	Footer            *VolHeaderFooter `json:"footer"`
-	Segments          int              `json:"segments"`
-	Buckets           int64            `json:"buckets"`
-	RecoverPos        int64            `json:"recover_pos"`
-	PrevRecoverPos    int64            `json:"prev_recover_pos"`
-	ScanPos           int64            `json:"scan_pos"`
-	Skip              int64            `json:"skip"`  // start to headers
-	Start             int64            `json:"start"` // start of data
-	Len               int64            `json:"len"`
-	DataBlocks        int64            `json:"data_blocks"`
-	AggBufPos         int              `json:"agg_buf_pos"`
-	HitEvacuateWindow int
-	Disk              *CacheDisk
-	Conf              *Config `json:"-"`
-	ContentStartPos   int64   `json:"content_start_pos"`
+	Path                   string           `json:"path"`
+	Dir                    [][][]*Dir       `json:"-"`
+	DirPos                 int64            `json:"dir_pos"`
+	Header                 *VolHeaderFooter `json:"header"`
+	Footer                 *VolHeaderFooter `json:"footer"`
+	Segments               int              `json:"segments"`
+	Buckets                int64            `json:"buckets"`
+	RecoverPos             int64            `json:"recover_pos"`
+	PrevRecoverPos         int64            `json:"prev_recover_pos"`
+	ScanPos                int64            `json:"scan_pos"`
+	Skip                   int64            `json:"skip"`  // start to headers
+	Start                  int64            `json:"start"` // start of data
+	Len                    int64            `json:"len"`
+	DataBlocks             int64            `json:"data_blocks"`
+	AggBufPos              int              `json:"agg_buf_pos"`
+	YYMinAverageObjectSize int              `json:"yy_min_average_object_size"`
+	HitEvacuateWindow      int
+	Disk                   *CacheDisk
+	Conf                   *Config `json:"-"`
+	ContentStartPos        int64   `json:"content_start_pos"`
 
 	YYFullDir  []*Dir `json:"-"`
 	YYStaleDir []*Dir `json:"-"`
@@ -66,8 +67,21 @@ type Vol struct {
 	Content []*Doc `json:"-"`
 }
 
-func NewVol() (*Vol, error) {
+func NewVol(cacheDisk *CacheDisk, minAverageObjectSize int) (*Vol, error) {
 	v := &Vol{}
+	v.Len = int64(cacheDisk.Header.VolInfo.Len * STORE_BLOCK_SIZE)
+	v.Disk = cacheDisk
+	v.Skip = int64(cacheDisk.Header.VolInfo.Offset)
+	v.PrevRecoverPos = 0
+	v.Start = int64(cacheDisk.Header.VolInfo.Offset)
+
+	v.YYMinAverageObjectSize = minAverageObjectSize
+	// 分析大小
+	v.initData()
+	v.DataBlocks = v.Len - (v.Start-v.Skip)/STORE_BLOCK_SIZE
+	cache_config_hit_evacuate_percent := 10
+	v.HitEvacuateWindow = int(v.DataBlocks) * cache_config_hit_evacuate_percent / 100
+
 	return v, nil
 }
 
@@ -81,7 +95,7 @@ func (d *Vol) initData() {
 func (d *Vol) initDataInternal() {
 	//var cache_config_min_average_object_size int64 = 512000 //8000
 	//var cache_config_min_average_object_size int64 = 8000
-	d.Buckets = (d.Len - (d.Start - d.Skip)) / int64(d.Conf.MinAverageObjectSize) / DIR_DEPTH
+	d.Buckets = (d.Len - (d.Start - d.Skip)) / int64(d.YYMinAverageObjectSize) / DIR_DEPTH
 	d.Segments = int((d.Buckets + (((1 << 16) - 1) / DIR_DEPTH)) / ((1 << 16) / DIR_DEPTH))
 	d.Buckets = (d.Buckets + int64(d.Segments) - 1) / int64(d.Segments)
 	d.Start = d.Skip + 2*int64(d.DirLen())
@@ -135,19 +149,8 @@ func (v *Vol) LoadDirs(start int64, buffer []byte) error {
 				offset := (bOffset + d) * SIZEOF_DIR
 				v.Dir[s][b][d].LoadFromBuffer(buffer[offset : offset+SIZEOF_DIR])
 				v.Dir[s][b][d].IdxOffset = start + int64(offset)
-				//fmt.Println(v.Dir[s][b][d])
 			}
-			//if b == 9908 {
-			//	for tt := 0; tt < 4; tt++ {
-			//		vstr, _ := json.Marshal(v.Dir[s][b][tt])
-			//		fmt.Println(string(vstr))
-			//	}
-			//	//break
-			//}
 		}
-		//if s == 0 {
-		//	//break
-		//}
 	}
 	return nil
 }

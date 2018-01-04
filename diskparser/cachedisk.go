@@ -3,7 +3,9 @@ package diskparser
 import (
 	"encoding/binary"
 	//"encoding/hex"
+	"encoding/hex"
 	"fmt"
+	"github.com/golang/glog"
 )
 
 /*
@@ -32,16 +34,6 @@ type DiskVol struct {
 	NumVolBlocks int
 	VolNumber    int
 	Size         uint64
-}
-
-type DiskHeader struct {
-	Magic          uint32 `json:"magic"`
-	NumVolumes     uint32 `json:"num_volumes"`
-	NumFree        uint32 `json:"num_free"`
-	NumUsed        uint32 `json:"num_used"`
-	NumDiskvolBlks uint32 `json:"num_diskvol_blks"`
-	NumBlocks      uint64 `json:"num_blocks"`
-	VolInfo        *DiskVolBlock
 }
 
 type DiskVolBlock struct {
@@ -73,12 +65,24 @@ const (
 
 	PAGE_SIZE = 8192
 
-	header_len = 56 // 56个字节
+	DiskHeaderLen = 56 // 56个字节
 
 	LEN_DiskVolBlock = 21
 	LEN_DiskHeader   = 6 + LEN_DiskVolBlock
 )
 
+// 磁盘头，一个磁盘可以有多个Volume
+type DiskHeader struct {
+	Magic          uint32        `json:"magic"`
+	NumVolumes     uint32        `json:"num_volumes"`
+	NumFree        uint32        `json:"num_free"`
+	NumUsed        uint32        `json:"num_used"`
+	NumDiskvolBlks uint32        `json:"num_diskvol_blks"`
+	NumBlocks      uint64        `json:"num_blocks"`
+	VolInfo        *DiskVolBlock `json:"-"`
+}
+
+// 磁盘信息
 type CacheDisk struct {
 	Header   *DiskHeader
 	Geometry *Geometry
@@ -92,46 +96,70 @@ type CacheDisk struct {
 	Fd              int
 	DiskVols        []DiskVol
 	FreeBlocks      []DiskVol
-	Cleared         int `json:"cleared"`
-	NumErrors       int `json:"num_errors"`
+	Cleared         int  `json:"cleared"`
+	NumErrors       int  `json:"num_errors"`
+	DebugLoad       bool // debug加载模式，解析保存数据（消耗内存）
+
+	YYVol               *Vol   `json:"-"`
+	PsRawDiskHeaderData []byte `json:"-"`
+	PsDiskOffsetStart   int64  // 磁盘上相对起始位置
+	PsDiskOffsetEnd     int64  // 磁盘上相对结束位置
 }
 
-//func NewCacheDisk(path string) (*CacheDisk, error) {
+func NewCacheDisk() (*CacheDisk, error) {
+	cd := &CacheDisk{}
+	// 初始化变量
+	cd.Header = &DiskHeader{
+		VolInfo: &DiskVolBlock{},
+	}
+	// 初始化必要的磁盘信息
+	err := cd.initGeometryInfo()
+	if err != nil {
+		return nil, fmt.Errorf("init disk geometry info failed: %s", err.Error())
+	}
+
+	return cd, nil
+}
+
+// 所需数据大小
+func (cd *CacheDisk) CacheDiskHeaderLen() int64 {
+	return DiskHeaderLen
+}
+
+// 从buffer中加载CacheDisk结构信息
+func (cd *CacheDisk) Load(buffer []byte) error {
+	if len(buffer) < DiskHeaderLen {
+		return fmt.Errorf("need %d raw data for parse disk info", DiskHeaderLen)
+	}
+
+	// 预存数据
+	if cd.DebugLoad {
+		cd.PsRawDiskHeaderData = make([]byte, DiskHeaderLen)
+		copy(cd.PsRawDiskHeaderData, buffer)
+	}
+
+	// 分析磁盘头
+	header, err := cd.loadDiskHeader(buffer[:DiskHeaderLen])
+	if err != nil {
+		return err
+	}
+	cd.Header = header
+
+	return nil
+}
+
 //
-//	fd, err := syscall.Open(path, syscall.O_RDONLY, 0777)
-//
-//	if err != nil {
-//		fmt.Errorf("open path failed: %s", err.Error())
-//		return nil, err
-//	}
-//
-//	ret := &CacheDisk{
-//		Fd:   fd,
-//		Path: path,
-//	}
-//
-//	geo := &Geometry{
-//		TotalSZ: 6001175126016,
-//		BlockSZ: 11721045168,
-//		AlignSZ: 0,
-//	}
-//
-//	ret.Geometry = geo
-//
-//	ret.Len = geo.BlockSZ - STORE_BLOCK_SIZE>>STORE_BLOCK_SHIFT
-//	ret.Skip = STORE_BLOCK_SIZE
-//
-//	header, err := ret.LoadDiskHeader()
-//	if err != nil {
-//		return nil, err
-//	}
-//	ret.Header = header
-//	return ret, nil
-//}
+func (cd *CacheDisk) initGeometryInfo() error {
+	cd.Geometry = getGeometry()
+	cd.Len = getGeometry().BlockSZ - STORE_BLOCK_SIZE>>STORE_BLOCK_SHIFT
+	cd.Skip = STORE_BLOCK_SIZE
+
+	return nil
+}
 
 const CacheFileSize = 268435456
 
-func GetGeometry() *Geometry {
+func getGeometry() *Geometry {
 
 	geos := make([]*Geometry, 0)
 
@@ -157,16 +185,17 @@ func GetGeometry() *Geometry {
 
 	return geos[1]
 }
+
 func NewCacheDiskFromBuffer(buffer []byte) (*CacheDisk, error) {
-	if len(buffer) != 56 {
-
+	if len(buffer) < DiskHeaderLen {
+		return nil, fmt.Errorf("need %d raw data for parse disk info", DiskHeaderLen)
 	}
-	ret := &CacheDisk{}
 
-	ret.Len = GetGeometry().BlockSZ - STORE_BLOCK_SIZE>>STORE_BLOCK_SHIFT
+	ret := &CacheDisk{}
+	ret.Len = getGeometry().BlockSZ - STORE_BLOCK_SIZE>>STORE_BLOCK_SHIFT
 	ret.Skip = STORE_BLOCK_SIZE
 
-	header, err := ret.LoadDiskHeader(buffer)
+	header, err := ret.loadDiskHeader(buffer)
 
 	if err != nil {
 		return nil, err
@@ -175,7 +204,7 @@ func NewCacheDiskFromBuffer(buffer []byte) (*CacheDisk, error) {
 	return ret, nil
 }
 
-func (cd *CacheDisk) LoadDiskHeader(buffer []byte) (*DiskHeader, error) {
+func (cd *CacheDisk) loadDiskHeader(buffer []byte) (*DiskHeader, error) {
 	header := DiskHeader{
 		VolInfo: &DiskVolBlock{},
 	}
@@ -184,50 +213,72 @@ func (cd *CacheDisk) LoadDiskHeader(buffer []byte) (*DiskHeader, error) {
 	if header.Magic != DISK_HEADER_MAGIC {
 		return nil, fmt.Errorf("disk header magic not match")
 	}
-	//fmt.Printf("\t%s\n", hex.Dump(buffer[curPos:curPos+4]))
+	glog.V(10).Infof(
+		"CacheDisk - DiskHeader - Magic <Offset %d>: \n %s\n",
+		curPos, hex.Dump(buffer[curPos:curPos+4]))
 	curPos += 4
 
 	header.NumVolumes = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
-	//fmt.Printf("\t%s\n", hex.Dump(buffer[curPos:curPos+4]))
+	glog.V(10).Infof(
+		"CacheDisk - DiskHeader - NumVolume <Offset %d>: \n %s\n",
+		curPos, hex.Dump(buffer[curPos:curPos+4]))
 	curPos += 4
 
 	header.NumFree = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
-	//fmt.Printf("\t%s\n", hex.Dump(buffer[curPos:curPos+4]))
+	glog.V(10).Infof(
+		"CacheDisk - DiskHeader - NumFree <Offset %d>: \n %s\n",
+		curPos, hex.Dump(buffer[curPos:curPos+4]))
 	curPos += 4
 
 	header.NumUsed = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
-	//fmt.Printf("\t%s\n", hex.Dump(buffer[curPos:curPos+4]))
+	glog.V(10).Infof(
+		"CacheDisk - DiskHeader - NumUsed <Offset %d>: \n %s\n",
+		curPos, hex.Dump(buffer[curPos:curPos+4]))
 	curPos += 4
 
 	header.NumDiskvolBlks = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
-	//fmt.Printf("\t%s\n", hex.Dump(buffer[curPos:curPos+4]))
+	glog.V(10).Infof(
+		"CacheDisk - DiskHeader - NumDiskVolBlocks <Offset %d>: \n %s\n",
+		curPos, hex.Dump(buffer[curPos:curPos+4]))
 	curPos += 4
 
 	// 因为C语言对齐
 	curPos += 4
 	header.NumBlocks = binary.LittleEndian.Uint64(buffer[curPos : curPos+8])
+	glog.V(10).Infof(
+		"CacheDisk - DiskHeader - NumBlocks <Offset %d>: \n %s\n",
+		curPos, hex.Dump(buffer[curPos:curPos+8]))
 	curPos += 8
 	//uint64_t delta_3_2 = skip - (skip >> STORE_BLOCK_SHIFT);
 
 	// 对齐
 	//curPos += 2
 	header.VolInfo.Offset = binary.LittleEndian.Uint64(buffer[curPos : curPos+8])
-	//fmt.Printf("\t%s\n", hex.Dump(buffer[curPos:curPos+8]))
+	glog.V(10).Infof(
+		"CacheDisk - DiskHeader - VolInfo - Offset <Offset %d>: \n %s\n",
+		curPos, hex.Dump(buffer[curPos:curPos+8]))
 	curPos += 8
 
 	header.VolInfo.Len = binary.LittleEndian.Uint64(buffer[curPos : curPos+8])
-	//fmt.Printf("\t%s\n", hex.Dump(buffer[curPos:curPos+8]))
+	glog.V(10).Infof(
+		"CacheDisk - DiskHeader - VolInfo - Len <Offset %d>: \n %s\n",
+		curPos, hex.Dump(buffer[curPos:curPos+8]))
 	curPos += 8
 
 	header.VolInfo.Number = int(binary.LittleEndian.Uint32(buffer[curPos : curPos+4]))
-	//fmt.Printf("\t%s\n", hex.Dump(buffer[curPos:curPos+8]))
+	glog.V(10).Infof(
+		"CacheDisk - DiskHeader - VolInfo - Number <Offset %d>: \n %s\n",
+		curPos, hex.Dump(buffer[curPos:curPos+4]))
 	curPos += 4
 
+	// binary.LittleEndian.Uint16
+
 	bytesValue := binary.LittleEndian.Uint16(buffer[curPos : curPos+2])
-	//fmt.Printf("\t%s\n", hex.Dump(buffer[curPos:curPos+2]))
+	glog.V(10).Infof(
+		"CacheDisk - DiskHeader - VolInfo - Type[0-3] & Free[4-4] <Offset %d>: \n %s\n",
+		curPos, hex.Dump(buffer[curPos:curPos+2]))
 	header.VolInfo.Type = uint8(bytesValue & 0x0007)
 	header.VolInfo.Free = uint8(bytesValue & 0x0008)
 
-	//fmt.Printf("\t%s\n", hex.Dump(buffer[:56]))
 	return &header, nil
 }
