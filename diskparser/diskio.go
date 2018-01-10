@@ -12,6 +12,7 @@ type DiskReader struct {
 	File             *os.File `json:"-"`
 	Fd               *int     `json:"-"`
 	StatReadBytes    uint64   `json:"stat_read_bytes"`
+	StatReadCount    uint64   `json:"stat_read_count"`
 	StatCostTimeNano int64    `json:"stat_cost_time_nano"`
 	StatIoSpeed      float64  `json:"stat_io_speed"`
 }
@@ -41,6 +42,7 @@ func (dio *DiskReader) open(path string) error {
 	if dio.StatCostTimeNano == 0 {
 		dio.StatCostTimeNano = 1
 	}
+	dio.StatReadCount = 0
 	return nil
 }
 
@@ -70,6 +72,7 @@ func (dio *DiskReader) read(offset, size int64) ([]byte, error) {
 	}
 	dio.StatCostTimeNano += time.Now().UnixNano() - start
 	dio.StatReadBytes += uint64(size)
+	dio.StatReadCount += 1
 	//NanoSpeed := float64(dio.StatReadBytes) / float64(dio.StatCostTimeNano)
 	//dio.StatIoSpeed = NanoSpeed * 1000 * 1000 * 1000
 	return ret, nil
@@ -80,9 +83,11 @@ func (dio *DiskReader) DumpStat() string {
 	dio.StatIoSpeed = float64(dio.StatReadBytes) / 1024 / 1024 / (float64(dio.StatCostTimeNano) / 1000 / 1000 / 1000)
 
 	dumpStr := fmt.Sprintf("DIO info: \n"+
+		" 		 Read Count:      %d\n"+
 		"        Read Bytes:      %d byte\n"+
 		"        CostTime:        %.6f sec\n"+
 		"        IoSpeed:         %f MB/s\n",
+		dio.StatReadCount,
 		dio.StatReadBytes,
 		float64(dio.StatCostTimeNano)/1000/1000/1000,
 		dio.StatIoSpeed)

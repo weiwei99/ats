@@ -31,6 +31,8 @@ type Dir struct {
 	// USE MACROS TO PREVENT UNALIGNED LOADS
 	// bits are numbered from lowest in u16 to highest
 	// always index as u16 to avoid byte order issues
+
+	// PS：此处的Offset是结合了OffsetHigh的和
 	Offset     uint64 `json:"offset"`      //bits 24 // (0,1:0-7) 16M * 512 = 8GB
 	Big        uint8  `json:"big"`         //bits 2
 	Size       uint8  `json:"size"`        //bits 6
@@ -65,13 +67,14 @@ func NewDir(buffer []byte) (*Dir, error) {
 		return nil, fmt.Errorf("buffer size not match sizeof Dir")
 	}
 	d := &Dir{}
-	return d.LoadFromBuffer(buffer)
+	return d.loadFromBuffer(buffer)
 }
 
-func (d *Dir) LoadFromBuffer(buffer []byte) (*Dir, error) {
+func (d *Dir) loadFromBuffer(buffer []byte) (*Dir, error) {
 	curPos := 0
 	data := binary.LittleEndian.Uint32(buffer[:4])
 
+	//
 	dataHigh := binary.LittleEndian.Uint16(buffer[8:10])
 	d.Offset = uint64(data)&0x00ffffff | (uint64(dataHigh) << 24)
 

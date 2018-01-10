@@ -58,9 +58,6 @@ func (d *Doc) Unmarshal() {
 func (d *Doc) LoadFromDisk(buffer []byte) error {
 	curPos := 0
 	d.Magic = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
-	//if d.Magic != DOC_MAGIC {
-	//	return fmt.Errorf("disk header magic not match")
-	//}
 	curPos += 4
 
 	d.Len = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])

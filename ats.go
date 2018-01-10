@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/abiosoft/ishell"
 	"github.com/golang/glog"
 	"github.com/weiwei99/ats/diskparser"
 	"os"
@@ -13,32 +12,8 @@ import (
 )
 
 var GCP *diskparser.CacheParser
-var GCONF *diskparser.Config
-
-var ParseDirCmd = &ishell.Cmd{
-	Name: "dir",
-	Func: func(c *ishell.Context) {
-		GCP.ParseRawDisk(*GCONF)
-	},
-}
-
-var StatDirCmd = &ishell.Cmd{
-	Name: "dir_stat",
-	Func: func(c *ishell.Context) {
-		GCP.DirStat()
-	},
-}
-
-func cmd() {
-	shell := ishell.New()
-	shell.Println("ATS DiskParser Shell")
-	shell.AddCmd(ParseDirCmd)
-	shell.AddCmd(StatDirCmd)
-	shell.Run()
-}
 
 func main() {
-
 	conf := diskparser.Config{}
 	flag.StringVar(&conf.Path, "path", "/dev/sdb", "-path=/dev/sdb")
 	flag.IntVar(&conf.MinAverageObjectSize, "mos", 8000, "-min_average_object_size")
@@ -46,7 +21,11 @@ func main() {
 
 	// 分析
 
-	cp := diskparser.CacheParser{}
+	cp, err := diskparser.NewCacheParser()
+	if err != nil {
+		fmt.Println(err.Error())
+		return
+	}
 	dio := &diskparser.DiskReader{}
 	cp.Dio = dio
 
@@ -86,12 +65,13 @@ func main() {
 
 	//
 
-	GCP = &cp
-	GCONF = &conf
+	cp.Conf = &conf
+	GCP = cp
+
 	//err := cp.ParseRawDisk(conf)
 	//if err != nil {
 	//	fmt.Println(err)
 	//	return
 	//}
-	cmd()
+	AtsCmd()
 }

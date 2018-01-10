@@ -136,7 +136,7 @@ func (d *Vol) allocDir() {
 	}
 }
 
-//
+// 填充dir数据
 func (v *Vol) LoadDirs(start int64, buffer []byte) error {
 	if len(buffer) != v.DirEntries()*SIZEOF_DIR {
 		return fmt.Errorf("buffer len not much")
@@ -147,7 +147,12 @@ func (v *Vol) LoadDirs(start int64, buffer []byte) error {
 			bOffset := sOffset + b*DIR_DEPTH
 			for d := 0; d < DIR_DEPTH; d++ {
 				offset := (bOffset + d) * SIZEOF_DIR
-				v.Dir[s][b][d].LoadFromBuffer(buffer[offset : offset+SIZEOF_DIR])
+				dir, err := NewDir(buffer[offset : offset+SIZEOF_DIR])
+				if err != nil {
+					return fmt.Errorf("wrong dir pos [%d, %d, %d], err: %s", s, b, d, err.Error())
+				}
+				v.Dir[s][b][d] = dir
+				//v.Dir[s][b][d].LoadFromBuffer(buffer[offset : offset+SIZEOF_DIR])
 				v.Dir[s][b][d].IdxOffset = start + int64(offset)
 			}
 		}

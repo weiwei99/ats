@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"sync"
+	"time"
 )
 
 const (
@@ -16,10 +18,15 @@ type CacheParser struct {
 	Dio   *DiskReader
 
 	cdisk *CacheDisk
+	Conf  *Config
+
+	DocLoadMutex *sync.RWMutex
 }
 
 func NewCacheParser() (*CacheParser, error) {
-	cp := &CacheParser{}
+	cp := &CacheParser{
+		DocLoadMutex: new(sync.RWMutex),
+	}
 	return cp, nil
 }
 
@@ -68,7 +75,7 @@ func (cparser *CacheParser) ParseRawDisk(conf Config) error {
 	cdiskInfo, err := json.Marshal(cdisk)
 	fmt.Println(string(cdiskInfo))
 
-	// 分析Vol的Header
+	// 分析Vol
 	cparser.Start = cparser.Start + uint64(DiskHeaderLen)
 	vol, err := cparser.ParseVol(cdisk, &conf)
 	if err != nil {
@@ -77,8 +84,6 @@ func (cparser *CacheParser) ParseRawDisk(conf Config) error {
 	}
 	cdisk.YYVol = vol
 
-	// 加载Dir
-	cparser.ParseDir(vol)
 	return nil
 }
 
@@ -89,17 +94,9 @@ func (cparser *CacheParser) CheckDir() {
 	fmt.Printf("check dir: %v\n", success)
 }
 
-// 统计DIR的状态
-func (cparser *CacheParser) DirStat() {
-	vol := cparser.cdisk.YYVol
-	vol.DirCheck(false)
-	volStr, _ := json.Marshal(vol)
-	fmt.Println(string(volStr))
-}
-
 // 分析content obj
 func (cparser *CacheParser) ScanHttpObject() {
-	err := cparser.ParseFullDir(cparser.cdisk.YYVol)
+	err := cparser.ExtractDocs(0)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -107,6 +104,7 @@ func (cparser *CacheParser) ScanHttpObject() {
 
 // 需要借助cache disk中的信息来parse vol
 func (cparser *CacheParser) ParseVol(cacheDisk *CacheDisk, conf *Config) (*Vol, error) {
+	begin := time.Now()
 	if cacheDisk == nil {
 		return nil, fmt.Errorf("parse vol failed, cache disk is nil")
 	}
@@ -136,10 +134,22 @@ func (cparser *CacheParser) ParseVol(cacheDisk *CacheDisk, conf *Config) (*Vol, 
 		return nil, err
 	}
 	fmt.Printf("VolHeaderFooter: \n %s\n", hstr)
+
+	// 加载DIR结构
+	err = cparser.parseDir(vol)
+	if err != nil {
+		return nil, err
+	}
+
+	// 分析DIR使用情况
+	vol.DirCheck(false)
+	volStr, _ := json.Marshal(vol)
+	fmt.Println(string(volStr))
+	fmt.Printf("cost %f secs\n", time.Since(begin).Seconds())
 	return vol, nil
 }
 
-func (cparser *CacheParser) ParseDir(vol *Vol) error {
+func (cparser *CacheParser) parseDir(vol *Vol) error {
 	// Scan Dir
 	vol.DirPos = vol.Header.AnalyseDiskOffset + int64(RoundToStoreBlock(SIZEOF_VolHeaderFooter))
 	abuf, err := cparser.Dio.read(vol.DirPos, int64(vol.DirEntries()*SIZEOF_DIR))
@@ -220,7 +230,7 @@ func (cparser *CacheParser) loadVolHeader(vol *Vol) ([]*VolHeaderFooter, error) 
 		hhstr, _ := json.Marshal(hh)
 		fmt.Println(string(hhstr))
 	}
-	var isFirst bool = true
+	var isFirst = true
 	if aHead.SyncSerial == aFoot.SyncSerial &&
 		(aHead.SyncSerial >= bHead.SyncSerial || bHead.SyncSerial != bFoot.SyncSerial) {
 
@@ -242,73 +252,72 @@ func (cparser *CacheParser) loadVolHeader(vol *Vol) ([]*VolHeaderFooter, error) 
 	return ret, nil
 }
 
-func (cparser *CacheParser) ParseFullDir(v *Vol) error {
-	v.Content = make([]*Doc, 0)
-	for _, d := range v.YYFullDir {
+func (cparser *CacheParser) LoadReadyDocCount() (int, int) {
+	if cparser.cdisk == nil || cparser.cdisk.YYVol == nil {
+		return 0, 0
+	}
+	v := cparser.cdisk.YYVol
+	cparser.DocLoadMutex.RLock()
+	defer cparser.DocLoadMutex.RUnlock()
+	return len(v.Content), len(v.YYFullDir)
+}
 
-		docPos := int64(d.Offset-1)*DEFAULT_HW_SECTOR_SIZE + v.ContentStartPos
-		con := &Doc{}
-		con.YYDiskOffset = docPos
-		buff, err := cparser.Dio.read(con.YYDiskOffset, 72)
+//
+func (cparser *CacheParser) ExtractDocs(max int) error {
+	if cparser.cdisk == nil || cparser.cdisk.YYVol == nil {
+		return fmt.Errorf("%s", "need parse vol first")
+	}
+	v := cparser.cdisk.YYVol
+	v.Content = make([]*Doc, 0)
+
+	if max < 1 || max >= len(v.YYFullDir) {
+		max = len(v.YYFullDir)
+	}
+	fmt.Printf("total FullDir : %d, need parse: %d\n", len(v.YYFullDir), max)
+	for _, dir := range v.YYFullDir {
+		docPos := int64(dir.Offset-1)*DEFAULT_HW_SECTOR_SIZE + v.ContentStartPos
+		buff, err := cparser.Dio.read(docPos, 72)
 		if err != nil {
 			return err
 		}
-		err = con.LoadFromDisk(buff)
+		newDoc, err := NewDoc(buff)
 		if err != nil {
-			fmt.Println("load content failed")
-			return fmt.Errorf("load content failed: %s", err.Error())
+			return fmt.Errorf("parse doc failed: %s", err.Error())
 		}
-		//conStr, _ := json.Marshal(con)
-		//fmt.Println(string(conStr))
+		newDoc.YYDiskOffset = docPos
 
-		if con.Magic != DOC_MAGIC {
+		if newDoc.Magic != DOC_MAGIC {
 			return fmt.Errorf("doc magic not match")
 		}
-		if con.HLen == 0 {
+		if newDoc.HLen == 0 {
 			continue
 		}
-		//v.Content = append(v.Content, con)
 
-		hh, err := cparser.ParseHttpInfoHeader(con)
-		if err != nil {
-			fmt.Printf("parse http info %s\n", err.Error())
-			continue
-		}
-		if hh.Magic != CACHE_ALT_MAGIC_MARSHALED {
-			continue
+		cparser.DocLoadMutex.Lock()
+		v.Content = append(v.Content, newDoc)
+		cparser.DocLoadMutex.Unlock()
+		max = max - 1
+		if max < 1 {
+			break
 		}
 
 	}
-
 	fmt.Printf("total content: %d\n", len(v.Content))
-	fmt.Printf("DiskReader: %s\n", cparser.Dio.DumpStat())
-	//
-	//first := make([]*HTTPCacheAlt, 0)
-	//for _, c := range v.Content {
-	//	hh, err := cparser.ParseHttpInfoHeader(c)
-	//	if err != nil {
-	//		fmt.Printf("parse http info %s\n", err.Error())
-	//		continue
-	//	}
-	//	if hh.Magic != CACHE_ALT_MAGIC_MARSHALED {
-	//		continue
-	//	}
-	//	first = append(first, hh)
-	//
-	//}
-
-	//for _, hh := range first {
-	//	histr, _ := json.Marshal(hh)
-	//	fmt.Println(string(histr))
-	//}
 	return nil
 }
 
-func (cparser *CacheParser) ParseHttpInfoHeader(d *Doc) (*HTTPCacheAlt, error) {
-	startPos := d.YYDiskOffset + 72
+// 从doc中提出http信息
+func (cparser *CacheParser) ExtractHttpInfoHeader(doc *Doc) (*HTTPCacheAlt, error) {
+	if doc.Magic != DOC_MAGIC {
+		return nil, fmt.Errorf("doc magic not match")
+	}
+	if doc.HLen == 0 {
+		return nil, fmt.Errorf("doc is empty")
+	}
 
+	startPos := doc.YYDiskOffset + 72
 	//fmt.Printf("dir h len: %d\n", d.HLen)
-	buf, err := cparser.Dio.read(startPos, int64(d.HLen))
+	buf, err := cparser.Dio.read(startPos, int64(doc.HLen))
 	if err != nil {
 		return nil, err
 	}
@@ -316,6 +325,10 @@ func (cparser *CacheParser) ParseHttpInfoHeader(d *Doc) (*HTTPCacheAlt, error) {
 	hi := &HTTPCacheAlt{}
 	hi.YYDiskOffset = startPos
 	hi.LoadFromBuffer(buf)
+
+	if hi.Magic != CACHE_ALT_MAGIC_MARSHALED {
+		return nil, fmt.Errorf("not http info block")
+	}
 
 	return hi, nil
 }
