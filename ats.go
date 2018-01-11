@@ -2,32 +2,19 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"github.com/golang/glog"
-	"github.com/weiwei99/ats/diskparser"
 	"os"
 	"os/signal"
 	"runtime/debug"
 	"syscall"
 )
 
-var GCP *diskparser.CacheParser
-
 func main() {
-	conf := diskparser.Config{}
-	flag.StringVar(&conf.Path, "path", "/dev/sdb", "-path=/dev/sdb")
-	flag.IntVar(&conf.MinAverageObjectSize, "mos", 8000, "-min_average_object_size")
+	var path string
+	//conf := diskparser.AConfig{}
+	flag.StringVar(&path, "ats_conf_dir", "/usr/local/etc/trafficserver",
+		"-ats_conf_dir=/usr/local/etc/trafficserver")
 	flag.Parse()
-
-	// 分析
-
-	cp, err := diskparser.NewCacheParser()
-	if err != nil {
-		fmt.Println(err.Error())
-		return
-	}
-	dio := &diskparser.DiskReader{}
-	cp.Dio = dio
 
 	// 捕获到panic异常
 	defer func() {
@@ -58,20 +45,9 @@ func main() {
 		glog.Errorf("catch signal: %s", sig.String())
 		glog.Flush()
 
-		fmt.Println(cp.Dio.DumpStat())
 		os.Exit(1)
 		// ... do something ...
 	}()
 
-	//
-
-	cp.Conf = &conf
-	GCP = cp
-
-	//err := cp.ParseRawDisk(conf)
-	//if err != nil {
-	//	fmt.Println(err)
-	//	return
-	//}
 	AtsCmd()
 }

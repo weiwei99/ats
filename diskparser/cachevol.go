@@ -58,8 +58,8 @@ type Vol struct {
 	YYMinAverageObjectSize int              `json:"yy_min_average_object_size"`
 	HitEvacuateWindow      int
 	Disk                   *CacheDisk
-	Conf                   *Config `json:"-"`
-	ContentStartPos        int64   `json:"content_start_pos"`
+	Conf                   *ATSConfig `json:"-"`
+	ContentStartPos        int64      `json:"content_start_pos"`
 
 	YYFullDir  []*Dir `json:"-"`
 	YYStaleDir []*Dir `json:"-"`

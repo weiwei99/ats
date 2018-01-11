@@ -17,7 +17,7 @@ type DiskReader struct {
 	StatIoSpeed      float64  `json:"stat_io_speed"`
 }
 
-func (dio *DiskReader) open(path string) error {
+func (dio *DiskReader) Open(path string) error {
 	_, err := os.Stat("path")
 	if os.IsNotExist(err) {
 		fd, err := syscall.Open(path, syscall.O_RDONLY, 0777)
@@ -83,10 +83,12 @@ func (dio *DiskReader) DumpStat() string {
 	dio.StatIoSpeed = float64(dio.StatReadBytes) / 1024 / 1024 / (float64(dio.StatCostTimeNano) / 1000 / 1000 / 1000)
 
 	dumpStr := fmt.Sprintf("DIO info: \n"+
+		"        Path:            %s\n"+
 		" 		 Read Count:      %d\n"+
 		"        Read Bytes:      %d byte\n"+
 		"        CostTime:        %.6f sec\n"+
 		"        IoSpeed:         %f MB/s\n",
+		dio.Path,
 		dio.StatReadCount,
 		dio.StatReadBytes,
 		float64(dio.StatCostTimeNano)/1000/1000/1000,

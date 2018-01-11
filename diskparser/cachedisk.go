@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/golang/glog"
+	"sync"
 )
 
 /*
@@ -104,16 +105,33 @@ type CacheDisk struct {
 	PsRawDiskHeaderData []byte `json:"-"`
 	PsDiskOffsetStart   int64  // 磁盘上相对起始位置
 	PsDiskOffsetEnd     int64  // 磁盘上相对结束位置
+	Dio                 *DiskReader
+	AtsConf             *ATSConfig
+	DocLoadMutex        *sync.RWMutex
 }
 
-func NewCacheDisk() (*CacheDisk, error) {
-	cd := &CacheDisk{}
+func NewCacheDisk(path string, atsconf *ATSConfig) (*CacheDisk, error) {
+	/// 初始化reader
+	dr := &DiskReader{}
+	err := dr.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("parse disk %s failed: %s", path, err.Error())
+	}
+
+	cd := &CacheDisk{
+		Start:        START,
+		Dio:          dr,
+		Path:         path,
+		AtsConf:      atsconf,
+		DocLoadMutex: new(sync.RWMutex),
+	}
+
 	// 初始化变量
 	cd.Header = &DiskHeader{
 		VolInfo: &DiskVolBlock{},
 	}
 	// 初始化必要的磁盘信息
-	err := cd.initGeometryInfo()
+	err = cd.initGeometryInfo()
 	if err != nil {
 		return nil, fmt.Errorf("init disk geometry info failed: %s", err.Error())
 	}
@@ -184,24 +202,6 @@ func getGeometry() *Geometry {
 	geos = append(geos, G5Geo)
 
 	return geos[1]
-}
-
-func NewCacheDiskFromBuffer(buffer []byte) (*CacheDisk, error) {
-	if len(buffer) < DiskHeaderLen {
-		return nil, fmt.Errorf("need %d raw data for parse disk info", DiskHeaderLen)
-	}
-
-	ret := &CacheDisk{}
-	ret.Len = getGeometry().BlockSZ - STORE_BLOCK_SIZE>>STORE_BLOCK_SHIFT
-	ret.Skip = STORE_BLOCK_SIZE
-
-	header, err := ret.loadDiskHeader(buffer)
-
-	if err != nil {
-		return nil, err
-	}
-	ret.Header = header
-	return ret, nil
 }
 
 func (cd *CacheDisk) loadDiskHeader(buffer []byte) (*DiskHeader, error) {
