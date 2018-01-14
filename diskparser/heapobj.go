@@ -16,7 +16,7 @@ const (
 	HDR_HEAP_OBJ_FIELD_BLOCK
 )
 
-type URL struct {
+type URLObj struct {
 	Scheme        string `json:"scheme"`
 	User          string `json:"user"`
 	Password      string `json:"password"`
@@ -78,7 +78,7 @@ func (hhdr *HdrHeapObjHeader) UnmarshalURL(buffer []byte) error {
 	curPos := 0
 	toLen := make([]uint16, 0)
 
-	url := &URL{}
+	url := &URLObj{}
 	//
 	for i := 0; i < 9; i++ {
 		tmp1 := binary.LittleEndian.Uint16(buffer[curPos : curPos+2])

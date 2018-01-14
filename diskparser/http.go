@@ -37,7 +37,7 @@ type HdrHeep struct {
 	MSize        uint32              `json:"m_size"`       // 大小
 	YYDiskOffset int64               `json:"yy_disk_offset"`
 	RawBytes     []byte              `json:"-"`
-	URL          *URL                `json:"url"`
+	URL          *URLObj             `json:"url"`
 	HdrObjects   []*HdrHeapObjHeader `json:"-"`
 }
 
@@ -48,7 +48,7 @@ type HdrHeapObjHeader struct {
 	Content      []byte      `json:"-"`
 	YYDiskOffset int64       `json:"yy_disk_offset"`
 	HttpHdr      *HTTPHdrImp `json:"-"`
-	Url          *URL        `json:"-"`
+	Url          *URLObj     `json:"-"`
 
 	HdrHeep *HdrHeep `json:"-"`
 }

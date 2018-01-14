@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"time"
 )
 
@@ -46,16 +47,19 @@ func (cd *CacheDisk) ParseCacheDiskHeader() error {
 		fmt.Println(err)
 		return err
 	}
-	err = cd.Load(buffer)
+	head, err := cd.loadDiskHeader(buffer)
 	if err != nil {
 		fmt.Println(err)
 		return err
 	}
+	// 预存数据
+	if cd.DebugLoad {
+		cd.PsRawDiskHeaderData = make([]byte, DiskHeaderLen)
+		copy(cd.PsRawDiskHeaderData, buffer)
+	}
+	cd.Header = head
 	cd.PsDiskOffsetStart = int64(START)
 	cd.PsDiskOffsetEnd = int64(START + DiskHeaderLen)
-	cdiskInfo, err := json.Marshal(cd)
-	fmt.Println(string(cdiskInfo))
-
 	return nil
 }
 
@@ -70,18 +74,7 @@ func (cparser *CacheParser) MainParse() error {
 }
 
 func (cd *CacheDisk) ParseRawDisk() error {
-	// 打开磁盘
-	//err := cparser.Dio.open(conf.Path)
-	//if err != nil {
-	//	fmt.Errorf("open path failed: %s", err.Error())
-	//	return err
-	//}
-	//
-	//cparser.Start = 0
-	//// 跳过磁盘头
-	//cparser.Start += START
-	// 分析CacheDisk的Header
-
+	// 分析磁盘描述头
 	err := cd.ParseCacheDiskHeader()
 	if err != nil {
 		return err
@@ -94,6 +87,33 @@ func (cd *CacheDisk) ParseRawDisk() error {
 		return err
 	}
 	cd.YYVol = vol
+
+	//
+	u := CacheURL{}
+	u11, _ := url.Parse("http://127.0.0.1:8080/5.jpg")
+
+	hash := u.HashGet(u11)
+	fmt.Println(hash)
+	fmt.Println(binary.LittleEndian.Uint32(hash[0:4]))
+	d1, d2 := vol.DirProbe(hash)
+	fmt.Printf("result: %s, %s\n", d1, d2)
+	if d1 == nil {
+		fmt.Println("no dir found!")
+		return nil
+	}
+
+	// get doc from dir
+	docPos := int64(d1.Offset-1)*DEFAULT_HW_SECTOR_SIZE + vol.ContentStartPos
+	buff, err := cd.Dio.read(docPos, 72)
+	if err != nil {
+		return err
+	}
+	newDoc, err := NewDoc(buff)
+	if err != nil {
+		return fmt.Errorf("parse doc failed: %s", err.Error())
+	}
+	docStr, _ := json.Marshal(newDoc)
+	fmt.Println(string(docStr))
 
 	return nil
 }
@@ -136,7 +156,6 @@ func (cd *CacheDisk) ParseVol() (*Vol, error) {
 	for i := 0; i < vol.Segments; i++ {
 		vol.Header.FreeList[i] = binary.LittleEndian.Uint16(freelistBuf[i*2 : i*2+2])
 	}
-
 	hstr, err := json.Marshal(vol.Header)
 	if err != nil {
 		return nil, err
@@ -234,17 +253,12 @@ func (cd *CacheDisk) loadVolHeader(vol *Vol) ([]*VolHeaderFooter, error) {
 	bFoot.AnalyseDiskOffset = bFootPos
 	ret[3] = bFoot
 
-	for _, hh := range ret {
-		hhstr, _ := json.Marshal(hh)
-		fmt.Println(string(hhstr))
-	}
 	var isFirst = true
 	if aHead.SyncSerial == aFoot.SyncSerial &&
 		(aHead.SyncSerial >= bHead.SyncSerial || bHead.SyncSerial != bFoot.SyncSerial) {
 
 		vol.Header = aHead
 		vol.Footer = aFoot
-
 	} else if bHead.SyncSerial == bFoot.SyncSerial {
 		vol.Header = bHead
 		vol.Footer = bFoot
@@ -279,8 +293,11 @@ func (cd *CacheDisk) ExtractDocs(max int) error {
 	if max < 1 || max >= len(v.YYFullDir) {
 		max = len(v.YYFullDir)
 	}
-	fmt.Printf("total FullDir : %d, need parse: %d\n", len(v.YYFullDir), max)
+	//fmt.Printf("total FullDir : %d, need parse: %d\n", len(v.YYFullDir), max)
 	for _, dir := range v.YYFullDir {
+		cc, _ := json.Marshal(dir)
+		fmt.Println(string(cc))
+
 		docPos := int64(dir.Offset-1)*DEFAULT_HW_SECTOR_SIZE + v.ContentStartPos
 		buff, err := cd.Dio.read(docPos, 72)
 		if err != nil {
@@ -295,9 +312,9 @@ func (cd *CacheDisk) ExtractDocs(max int) error {
 		if newDoc.Magic != DOC_MAGIC {
 			return fmt.Errorf("doc magic not match")
 		}
-		if newDoc.HLen == 0 {
-			continue
-		}
+		//if newDoc.HLen == 0 {
+		//	continue
+		//}
 
 		cd.DocLoadMutex.Lock()
 		v.Content = append(v.Content, newDoc)
@@ -308,7 +325,7 @@ func (cd *CacheDisk) ExtractDocs(max int) error {
 		}
 
 	}
-	fmt.Printf("total content: %d\n", len(v.Content))
+	//fmt.Printf("total content: %d\n", len(v.Content))
 	return nil
 }
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/abiosoft/ishell"
 	"github.com/weiwei99/ats/diskparser"
@@ -12,7 +13,8 @@ var GCP *diskparser.CacheParser
 
 // 设置
 var SetCmd = &ishell.Cmd{
-	Name: "set_conf_dir",
+	Name: "conf",
+	Help: "conf /usr/local/etc/trafficserver",
 	Func: func(c *ishell.Context) {
 		if len(c.Args) != 1 {
 			fmt.Println("must need one args")
@@ -41,12 +43,55 @@ var ParseDirCmd = &ishell.Cmd{
 	Name: "base",
 	Func: func(c *ishell.Context) {
 		if GCP.Conf == nil {
-			fmt.Println("use set_conf_dir command first")
+			fmt.Println("use conf command first")
 			return
 		}
 		err := GCP.MainParse()
 		if err != nil {
 			fmt.Println(err.Error())
+		}
+
+	},
+}
+
+var DumpDiskCmd = &ishell.Cmd{
+	Name: "disk",
+	Func: func(c *ishell.Context) {
+		if GCP.Conf == nil {
+			fmt.Println("use conf command first")
+			return
+		}
+		diskCount := len(GCP.CacheDisks)
+		if diskCount == 0 {
+			fmt.Println("没有找到缓存盘，检查ats配置文件")
+			return
+		}
+		if len(c.Args) != 1 {
+			fmt.Printf("需要一个参数，从0-%d\n", diskCount-1)
+			return
+		}
+
+		n, err := strconv.Atoi(c.Args[0])
+		if err != nil || n > (diskCount-1) {
+			fmt.Printf("需要一个参数，从0-%d\n", diskCount-1)
+			return
+		}
+
+		hd, err := json.Marshal(GCP.CacheDisks[n].Header)
+		if err != nil {
+			fmt.Println(err.Error())
+			return
+		}
+		fmt.Println(string(hd))
+	},
+}
+
+var DumpVolCmd = &ishell.Cmd{
+	Name: "vol",
+	Func: func(c *ishell.Context) {
+		if GCP.Conf == nil {
+			fmt.Println("use conf command first")
+			return
 		}
 	},
 }
@@ -56,7 +101,7 @@ var ExtractDocsCmd = &ishell.Cmd{
 	Name: "doc",
 	Func: func(c *ishell.Context) {
 		if GCP.Conf == nil {
-			fmt.Println("use set_conf_dir command first")
+			fmt.Println("use conf command first")
 			return
 		}
 
@@ -76,13 +121,14 @@ var ExtractDocsCmd = &ishell.Cmd{
 		}
 
 		c.ProgressBar().Start()
-		var ready, total int
 
+		start := time.Now()
+		var ready, total int
 		for {
 			for _, v := range GCP.CacheDisks {
-				_ready, _total := v.LoadReadyDocCount()
-				ready += _ready
-				total += _total
+				diskReady, diskTotal := v.LoadReadyDocCount()
+				ready += diskReady
+				total += diskTotal
 			}
 
 			if docNum > 0 && docNum < total {
@@ -92,10 +138,18 @@ var ExtractDocsCmd = &ishell.Cmd{
 				break
 			}
 			i := int(float32(ready) / float32(total) * 100.0)
-			c.ProgressBar().Suffix(fmt.Sprint(" ", i, "%"))
+			c.ProgressBar().Suffix(fmt.Sprint(
+				" ", i, "%", " ", ready, "/", total, " ",
+				int(time.Since(start).Seconds()), " seconds"))
 			c.ProgressBar().Progress(i)
 			time.Sleep(time.Second * 1)
+			ready = 0
+			total = 0
 		}
+		c.ProgressBar().Suffix(fmt.Sprint(
+			" ", 100, "%", " ", ready, "/", total, " ",
+			int(time.Since(start).Seconds()), " seconds"))
+		c.ProgressBar().Progress(100)
 		c.ProgressBar().Stop()
 	},
 }
@@ -126,12 +180,18 @@ var StatDIOCmd = &ishell.Cmd{
 	},
 }
 
+func welcome() string {
+	return "ATS DiskParser Shell"
+}
+
 func AtsCmd() {
 	shell := ishell.New()
-	shell.Println("ATS DiskParser Shell")
+	shell.Println(welcome())
 	shell.AddCmd(SetCmd)
 	shell.AddCmd(ParseDirCmd)
 	shell.AddCmd(StatDIOCmd)
 	shell.AddCmd(ExtractDocsCmd)
+	shell.AddCmd(DumpDiskCmd)
+	shell.AddCmd(DumpVolCmd)
 	shell.Run()
 }

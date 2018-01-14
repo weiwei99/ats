@@ -144,27 +144,27 @@ func (cd *CacheDisk) CacheDiskHeaderLen() int64 {
 	return DiskHeaderLen
 }
 
-// 从buffer中加载CacheDisk结构信息
-func (cd *CacheDisk) Load(buffer []byte) error {
-	if len(buffer) < DiskHeaderLen {
-		return fmt.Errorf("need %d raw data for parse disk info", DiskHeaderLen)
-	}
-
-	// 预存数据
-	if cd.DebugLoad {
-		cd.PsRawDiskHeaderData = make([]byte, DiskHeaderLen)
-		copy(cd.PsRawDiskHeaderData, buffer)
-	}
-
-	// 分析磁盘头
-	header, err := cd.loadDiskHeader(buffer[:DiskHeaderLen])
-	if err != nil {
-		return err
-	}
-	cd.Header = header
-
-	return nil
-}
+//// 从buffer中加载CacheDisk结构信息
+//func (cd *CacheDisk) load(buffer []byte) error {
+//	if len(buffer) < DiskHeaderLen {
+//		return fmt.Errorf("need %d raw data for parse disk info", DiskHeaderLen)
+//	}
+//
+//	// 预存数据
+//	if cd.DebugLoad {
+//		cd.PsRawDiskHeaderData = make([]byte, DiskHeaderLen)
+//		copy(cd.PsRawDiskHeaderData, buffer)
+//	}
+//
+//	// 分析磁盘头
+//	header, err := cd.loadDiskHeader(buffer[:DiskHeaderLen])
+//	if err != nil {
+//		return err
+//	}
+//	cd.Header = header
+//
+//	return nil
+//}
 
 //
 func (cd *CacheDisk) initGeometryInfo() error {
@@ -176,33 +176,6 @@ func (cd *CacheDisk) initGeometryInfo() error {
 }
 
 const CacheFileSize = 268435456
-
-func getGeometry() *Geometry {
-
-	geos := make([]*Geometry, 0)
-
-	BigGeo := &Geometry{
-		TotalSZ: 6001175126016,
-		BlockSZ: 11721045168,
-		AlignSZ: 0,
-	}
-	geos = append(geos, BigGeo)
-
-	SmallGeo := &Geometry{
-		TotalSZ: 2147483648,
-		BlockSZ: 4194304,
-		AlignSZ: 0,
-	}
-	geos = append(geos, SmallGeo)
-	G5Geo := &Geometry{
-		TotalSZ: 5368709120,
-		BlockSZ: 10485760,
-		AlignSZ: 0,
-	}
-	geos = append(geos, G5Geo)
-
-	return geos[1]
-}
 
 func (cd *CacheDisk) loadDiskHeader(buffer []byte) (*DiskHeader, error) {
 	header := DiskHeader{

@@ -2,6 +2,7 @@ package diskparser
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 )
 
@@ -151,6 +152,9 @@ func (v *Vol) LoadDirs(start int64, buffer []byte) error {
 				if err != nil {
 					return fmt.Errorf("wrong dir pos [%d, %d, %d], err: %s", s, b, d, err.Error())
 				}
+				dir.IdxSegment = s
+				dir.IdxBucket = b
+				dir.IdxDepth = d
 				v.Dir[s][b][d] = dir
 				//v.Dir[s][b][d].LoadFromBuffer(buffer[offset : offset+SIZEOF_DIR])
 				v.Dir[s][b][d].IdxOffset = start + int64(offset)
@@ -333,6 +337,46 @@ func (v *Vol) DirFreelistLength(s int) int {
 	}
 
 }
+
+//
+func (v *Vol) DirProbe(key []byte) (*Dir, **Dir) {
+
+	if len(key) != 16 {
+		return nil, nil
+	}
+	s := binary.LittleEndian.Uint32(key[0:4]) % uint32(v.Segments)
+	b := binary.LittleEndian.Uint32(key[4:8]) % uint32(v.Buckets)
+	DIR_TAG_WIDTH := 12
+	seg := v.DirSegment(int(s))
+	e := v.DirBucket(int(b), seg)
+	fmt.Printf("dirprobe....%d, %d\n", s, b)
+	fmt.Println(key)
+	estr, _ := json.Marshal(e)
+	fmt.Printf("e: %s\n", estr)
+
+	if e.Offset != 0 {
+		for {
+			b := binary.LittleEndian.Uint32(key[8:12]) & ((1 << uint(DIR_TAG_WIDTH)) - 1)
+			fmt.Printf("%s vs %s\n", uint32(e.Tag), b)
+			if uint32(e.Tag) == b {
+				// 检测碰撞
+
+				if v.DirValid(e) {
+					return e, nil
+				} else {
+					// delete the invalid entry
+					continue
+				}
+			} else {
+
+			}
+			fmt.Println("try next")
+			e = v.NextDir(e, seg)
+		}
+	}
+	return nil, nil
+}
+
 func (v *Vol) DirBucket(b int, s *Dir) *Dir {
 	return v.Dir[s.IdxSegment][b][0]
 }
