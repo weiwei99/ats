@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/golang/glog"
+	"github.com/weiwei99/ats/lib/conf"
 	"sync"
 )
 
@@ -106,11 +107,11 @@ type CacheDisk struct {
 	PsDiskOffsetStart   int64  // 磁盘上相对起始位置
 	PsDiskOffsetEnd     int64  // 磁盘上相对结束位置
 	Dio                 *DiskReader
-	AtsConf             *ATSConfig
+	AtsConf             *conf.ATSConfig
 	DocLoadMutex        *sync.RWMutex
 }
 
-func NewCacheDisk(path string, atsconf *ATSConfig) (*CacheDisk, error) {
+func NewCacheDisk(path string, atsconf *conf.ATSConfig) (*CacheDisk, error) {
 	/// 初始化reader
 	dr := &DiskReader{}
 	err := dr.Open(path)

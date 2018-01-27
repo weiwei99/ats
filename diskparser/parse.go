@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/weiwei99/ats/lib/conf"
 	"net/url"
 	"time"
 )
@@ -17,10 +18,10 @@ type CacheParser struct {
 	//Start        uint64
 	//Dio    []*DiskReader
 	CacheDisks []*CacheDisk
-	Conf       *ATSConfig
+	Conf       *conf.ATSConfig
 }
 
-func NewCacheParser(atsconf *ATSConfig) (*CacheParser, error) {
+func NewCacheParser(atsconf *conf.ATSConfig) (*CacheParser, error) {
 	cp := &CacheParser{
 		CacheDisks: make([]*CacheDisk, 0),
 	}
@@ -73,6 +74,37 @@ func (cparser *CacheParser) MainParse() error {
 	return nil
 }
 
+func (cd *CacheDisk) FindURL(urlStr string) (*Doc, error) {
+	if cd.YYVol == nil {
+		return nil, fmt.Errorf("%s", "cache do not initialize")
+	}
+	//"http://127.0.0.1:8080/5.jpg"
+	u := CacheURL{}
+	u11, _ := url.Parse(urlStr)
+
+	hash := u.HashGet(u11)
+	fmt.Println(hash)
+	fmt.Println(binary.LittleEndian.Uint32(hash[0:4]))
+	d1, d2 := cd.YYVol.DirProbe(hash)
+	fmt.Printf("result: %s, %s\n", d1, d2)
+	if d1 == nil {
+		fmt.Println("no dir found!")
+		return nil, nil
+	}
+
+	// get doc from dir
+	docPos := int64(d1.Offset-1)*DEFAULT_HW_SECTOR_SIZE + cd.YYVol.ContentStartPos
+	buff, err := cd.Dio.read(docPos, 72)
+	if err != nil {
+		return nil, err
+	}
+	newDoc, err := NewDoc(buff)
+	if err != nil {
+		return nil, fmt.Errorf("parse doc failed: %s", err.Error())
+	}
+	return newDoc, nil
+}
+
 func (cd *CacheDisk) ParseRawDisk() error {
 	// 分析磁盘描述头
 	err := cd.ParseCacheDiskHeader()
@@ -87,34 +119,6 @@ func (cd *CacheDisk) ParseRawDisk() error {
 		return err
 	}
 	cd.YYVol = vol
-
-	//
-	u := CacheURL{}
-	u11, _ := url.Parse("http://127.0.0.1:8080/5.jpg")
-
-	hash := u.HashGet(u11)
-	fmt.Println(hash)
-	fmt.Println(binary.LittleEndian.Uint32(hash[0:4]))
-	d1, d2 := vol.DirProbe(hash)
-	fmt.Printf("result: %s, %s\n", d1, d2)
-	if d1 == nil {
-		fmt.Println("no dir found!")
-		return nil
-	}
-
-	// get doc from dir
-	docPos := int64(d1.Offset-1)*DEFAULT_HW_SECTOR_SIZE + vol.ContentStartPos
-	buff, err := cd.Dio.read(docPos, 72)
-	if err != nil {
-		return err
-	}
-	newDoc, err := NewDoc(buff)
-	if err != nil {
-		return fmt.Errorf("parse doc failed: %s", err.Error())
-	}
-	docStr, _ := json.Marshal(newDoc)
-	fmt.Println(string(docStr))
-
 	return nil
 }
 

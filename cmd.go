@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/abiosoft/ishell"
-	"github.com/weiwei99/ats/diskparser"
+	"net/url"
 	"strconv"
 	"time"
 )
 
-var GCP *diskparser.CacheParser
+//var GCP *diskparser.CacheParser
+var GATSClient *ATSClient
 
 // 设置
 var SetCmd = &ishell.Cmd{
@@ -20,21 +21,14 @@ var SetCmd = &ishell.Cmd{
 			fmt.Println("must need one args")
 			return
 		}
-		ac, err := diskparser.NewAtsConfig(c.Args[0])
-		if err != nil {
-			fmt.Printf("failed: %s\n", err.Error())
-			return
-		}
-		fmt.Println(ac.Dump())
-
-		// 创建分析器
-		cp, err := diskparser.NewCacheParser(ac)
+		atsCli := NewATSClient()
+		err := atsCli.LoadConfiguration(c.Args[0])
 		if err != nil {
 			fmt.Println(err.Error())
 			return
 		}
-		GCP = cp
-		GCP.Conf = ac
+		fmt.Println(atsCli.AtsConf.Dump())
+		GATSClient = atsCli
 	},
 }
 
@@ -42,11 +36,11 @@ var SetCmd = &ishell.Cmd{
 var ParseDirCmd = &ishell.Cmd{
 	Name: "base",
 	Func: func(c *ishell.Context) {
-		if GCP.Conf == nil {
+		if GATSClient.CacheParser.Conf == nil {
 			fmt.Println("use conf command first")
 			return
 		}
-		err := GCP.MainParse()
+		err := GATSClient.CacheParser.MainParse()
 		if err != nil {
 			fmt.Println(err.Error())
 		}
@@ -57,11 +51,11 @@ var ParseDirCmd = &ishell.Cmd{
 var DumpDiskCmd = &ishell.Cmd{
 	Name: "disk",
 	Func: func(c *ishell.Context) {
-		if GCP.Conf == nil {
+		if !GATSClient.IsInitialize() {
 			fmt.Println("use conf command first")
 			return
 		}
-		diskCount := len(GCP.CacheDisks)
+		diskCount := len(GATSClient.CacheParser.CacheDisks)
 		if diskCount == 0 {
 			fmt.Println("没有找到缓存盘，检查ats配置文件")
 			return
@@ -77,7 +71,7 @@ var DumpDiskCmd = &ishell.Cmd{
 			return
 		}
 
-		hd, err := json.Marshal(GCP.CacheDisks[n].Header)
+		hd, err := json.Marshal(GATSClient.CacheParser.CacheDisks[n].Header)
 		if err != nil {
 			fmt.Println(err.Error())
 			return
@@ -89,7 +83,7 @@ var DumpDiskCmd = &ishell.Cmd{
 var DumpVolCmd = &ishell.Cmd{
 	Name: "vol",
 	Func: func(c *ishell.Context) {
-		if GCP.Conf == nil {
+		if !GATSClient.IsInitialize() {
 			fmt.Println("use conf command first")
 			return
 		}
@@ -100,7 +94,7 @@ var DumpVolCmd = &ishell.Cmd{
 var ExtractDocsCmd = &ishell.Cmd{
 	Name: "doc",
 	Func: func(c *ishell.Context) {
-		if GCP.Conf == nil {
+		if !GATSClient.IsInitialize() {
 			fmt.Println("use conf command first")
 			return
 		}
@@ -116,7 +110,7 @@ var ExtractDocsCmd = &ishell.Cmd{
 		}
 		fmt.Println(c.Args)
 
-		for _, v := range GCP.CacheDisks {
+		for _, v := range GATSClient.CacheParser.CacheDisks {
 			go v.ExtractDocs(docNum)
 		}
 
@@ -125,7 +119,7 @@ var ExtractDocsCmd = &ishell.Cmd{
 		start := time.Now()
 		var ready, total int
 		for {
-			for _, v := range GCP.CacheDisks {
+			for _, v := range GATSClient.CacheParser.CacheDisks {
 				diskReady, diskTotal := v.LoadReadyDocCount()
 				ready += diskReady
 				total += diskTotal
@@ -158,10 +152,29 @@ var ExtractDocsCmd = &ishell.Cmd{
 var FindObjectCmd = &ishell.Cmd{
 	Name: "find",
 	Func: func(c *ishell.Context) {
-		if GCP.Conf == nil {
-			fmt.Println("use set_conf_dir command first")
+		if !GATSClient.IsInitialize() {
+			fmt.Println("use set command first")
 			return
 		}
+		if len(c.Args) != 1 {
+			fmt.Println("need 1 arg")
+			return
+		}
+
+		// 检查入参
+		_, err := url.Parse(c.Args[0])
+		if err != nil {
+			fmt.Println(err.Error())
+			return
+		}
+
+		reurlString := GATSClient.RemapService.Remap(c.Args[0])
+		doc, err := GATSClient.CacheParser.CacheDisks[0].FindURL(reurlString)
+		if err != nil {
+			fmt.Printf("find failed: %s\n", err)
+		}
+		docStr, _ := json.Marshal(doc)
+		fmt.Println(string(docStr))
 	},
 }
 
@@ -169,11 +182,11 @@ var FindObjectCmd = &ishell.Cmd{
 var StatDIOCmd = &ishell.Cmd{
 	Name: "dio_stat",
 	Func: func(c *ishell.Context) {
-		if GCP.Conf == nil {
+		if !GATSClient.IsInitialize() {
 			fmt.Println("use set_conf_dir command first")
 			return
 		}
-		for _, v := range GCP.CacheDisks {
+		for _, v := range GATSClient.CacheParser.CacheDisks {
 			fmt.Println(v.Dio.DumpStat())
 			fmt.Println("-----------------------")
 		}
@@ -184,13 +197,14 @@ func welcome() string {
 	return "ATS DiskParser Shell"
 }
 
-func AtsCmd() {
+func CommandLoop() {
 	shell := ishell.New()
 	shell.Println(welcome())
 	shell.AddCmd(SetCmd)
 	shell.AddCmd(ParseDirCmd)
 	shell.AddCmd(StatDIOCmd)
 	shell.AddCmd(ExtractDocsCmd)
+	shell.AddCmd(FindObjectCmd)
 	shell.AddCmd(DumpDiskCmd)
 	shell.AddCmd(DumpVolCmd)
 	shell.Run()

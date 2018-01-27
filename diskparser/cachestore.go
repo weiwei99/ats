@@ -3,12 +3,13 @@ package diskparser
 import (
 	"fmt"
 	"github.com/golang/glog"
+	"github.com/weiwei99/ats/lib/conf"
 )
 
 type Store struct {
-	NDisk  uint32     `json:"n_disk"`
-	Spans  []*Span    `json:"disk"`
-	Config *ATSConfig `json:"-"`
+	NDisk  uint32          `json:"n_disk"`
+	Spans  []*Span         `json:"disk"`
+	Config *conf.ATSConfig `json:"-"`
 }
 
 type Span struct {
@@ -66,7 +67,7 @@ func getGeometry() *Geometry {
 }
 
 //
-func NewStore(config *ATSConfig) (*Store, error) {
+func NewStore(config *conf.ATSConfig) (*Store, error) {
 
 	store := &Store{
 		Config: config,

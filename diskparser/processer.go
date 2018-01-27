@@ -1,6 +1,9 @@
 package diskparser
 
-import "fmt"
+import (
+	"fmt"
+	"github.com/weiwei99/ats/lib/conf"
+)
 
 type CacheProcesser struct {
 	GVol       []*Vol
@@ -15,7 +18,7 @@ func (cp *CacheProcesser) DirCheck(afix bool) int {
 	return 0
 }
 
-func NewCacheProcesser(config *ATSConfig) (*CacheProcesser, error) {
+func NewCacheProcesser(config *conf.ATSConfig) (*CacheProcesser, error) {
 	cp := &CacheProcesser{
 		CacheDisks: make([]*CacheDisk, 0),
 	}

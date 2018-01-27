@@ -1,4 +1,4 @@
-package diskparser
+package conf
 
 import (
 	"bufio"
@@ -13,6 +13,7 @@ type ATSConfig struct {
 	Path                 string
 	MinAverageObjectSize int
 	Storages             []string
+	RemapConfigPath      string
 }
 
 func NewAtsConfig(path string) (*ATSConfig, error) {
@@ -32,6 +33,8 @@ func NewAtsConfig(path string) (*ATSConfig, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	ac.RemapConfigPath = ac.Path + "remap.config"
 	return ac, nil
 }
 

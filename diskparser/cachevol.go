@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/weiwei99/ats/lib/conf"
 )
 
 const (
@@ -59,8 +60,8 @@ type Vol struct {
 	YYMinAverageObjectSize int              `json:"yy_min_average_object_size"`
 	HitEvacuateWindow      int
 	Disk                   *CacheDisk
-	Conf                   *ATSConfig `json:"-"`
-	ContentStartPos        int64      `json:"content_start_pos"`
+	Conf                   *conf.ATSConfig `json:"-"`
+	ContentStartPos        int64           `json:"content_start_pos"`
 
 	YYFullDir  []*Dir `json:"-"`
 	YYStaleDir []*Dir `json:"-"`

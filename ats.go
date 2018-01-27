@@ -49,5 +49,5 @@ func main() {
 		// ... do something ...
 	}()
 
-	AtsCmd()
+	CommandLoop()
 }
