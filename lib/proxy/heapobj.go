@@ -1,4 +1,4 @@
-package diskparser
+package proxy
 
 import (
 	"encoding/binary"

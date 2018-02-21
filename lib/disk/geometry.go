@@ -1,7 +1,7 @@
-package diskparser
+package disk
 
 type Geometry struct {
-	TotalSZ uint64
+	TotalSZ int64
 	BlockSZ int64
 	AlignSZ uint32
 }

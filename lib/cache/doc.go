@@ -1,7 +1,8 @@
-package diskparser
+package cache
 
 import (
 	"encoding/binary"
+	"github.com/weiwei99/ats/lib/proxy"
 )
 
 const (
@@ -11,23 +12,22 @@ const (
 // Note : hdr() needs to be 8 byte aligned. // 小文件一个doc存储，大文件则会将《内容》分为多个fragment，每个fragment有一个doc
 // If you change this, change sizeofDoc above
 type Doc struct {
-	Magic       uint32 `json:"magic"`     // DOC_MAGIC
-	Len         uint32 `json:"len"`       //length of this fragment (including hlen & sizeof(Doc), unrounded)
-	TotalLen    uint64 `json:"total_len"` // total length of document
-	FirstKey    []byte `json:"first_key"` //16 ///< first key in object. // 小文件则是对象
-	Key         []byte `json:"key"`       //16 ///< Key for this doc.
-	HLen        uint32 `json:"h_len"`     ///< Length of this header.
-	DocByte     uint8  `json:"doc_byte"`  //8
-	VMajor      uint8  `json:"v_major"`   //8
-	VMinor      uint8  `json:"v_minor"`   //8
-	UnUsed      uint8  `json:"un_used"`   //8
-	SyncSerial  uint32 `json:"sync_serial"`
-	WriteSerial uint32 `json:"write_serial"`
-	Pinned      uint32 `json:"pinned"` // pinned until
-	CheckSum    uint32 `json:"check_sum"`
-
-	YYDiskOffset   int64         `json:"yy_disk_offset"`
-	HttpInfoHeader *HTTPCacheAlt `json:"http_info_header"`
+	Magic          uint32              `json:"magic"`     // DOC_MAGIC
+	Len            uint32              `json:"len"`       //length of this fragment (including hlen & sizeof(Doc), unrounded)
+	TotalLen       uint64              `json:"total_len"` // total length of document
+	FirstKey       []byte              `json:"first_key"` //16 ///< first key in object. // 小文件则是对象
+	Key            []byte              `json:"key"`       //16 ///< Key for this doc.
+	HLen           uint32              `json:"h_len"`     ///< Length of this header.
+	DocByte        uint8               `json:"doc_byte"`  //8
+	VMajor         uint8               `json:"v_major"`   //8
+	VMinor         uint8               `json:"v_minor"`   //8
+	UnUsed         uint8               `json:"un_used"`   //8
+	SyncSerial     uint32              `json:"sync_serial"`
+	WriteSerial    uint32              `json:"write_serial"`
+	Pinned         uint32              `json:"pinned"` // pinned until
+	CheckSum       uint32              `json:"check_sum"`
+	YYDiskOffset   int64               `json:"yy_disk_offset"`
+	HttpInfoHeader *proxy.HTTPCacheAlt `json:"http_info_header"`
 }
 
 func NewDoc(buffer []byte) (*Doc, error) {

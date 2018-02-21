@@ -1,4 +1,4 @@
-package diskparser
+package proxy
 
 import (
 	"crypto/md5"
@@ -28,8 +28,8 @@ type CacheHostTable struct {
 
 //
 type CacheHostRecord struct {
-	CacheType      int
-	Vols           [][]Vol
+	CacheType int
+	//Vols           [][]cache.Vol
 	GoodNumVols    int
 	NumVols        int
 	NumInitialized int
@@ -97,11 +97,12 @@ func (cu *CacheURL) HashGet(url *url.URL) []byte {
 
 // 根据key选择vol
 func (cu *CacheURL) KeyToVol(key []byte, host string) {
-	//VOL_HASH_TABLE_SIZE := 32707
-	//DIR_TAG_WIDTH := 12
+	VOL_HASH_TABLE_SIZE := 32707
+	DIR_TAG_WIDTH := 12
 
-	//a := (binary.LittleEndian.Uint32(key[8:12]) >> uint32(DIR_TAG_WIDTH)) % uint32(VOL_HASH_TABLE_SIZE)
+	a := (binary.LittleEndian.Uint32(key[8:12]) >> uint32(DIR_TAG_WIDTH)) % uint32(VOL_HASH_TABLE_SIZE)
 
+	fmt.Println(a)
 }
 
 // 根据key选择dir

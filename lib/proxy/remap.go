@@ -61,6 +61,18 @@ func (rs *RemapService) AppendRule(rule string) error {
 	return nil
 }
 
+// 解析map指令
+func (rs *RemapService) mapParse(rule string) error {
+
+	return nil
+}
+
+// 解析正则map指令
+func (rs *RemapService) regmapParse(rule string) error {
+
+	return nil
+}
+
 // Remap URL
 func (rs *RemapService) Remap(urlStr string) string {
 	for from, to := range rs.rules {
@@ -71,6 +83,7 @@ func (rs *RemapService) Remap(urlStr string) string {
 	return urlStr
 }
 
+// DUMP remap信息
 func (rs *RemapService) Dump() string {
 	var retval string
 	for from, to := range rs.rules {

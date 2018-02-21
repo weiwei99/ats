@@ -1,4 +1,4 @@
-package diskparser
+package cache
 
 import (
 	"fmt"

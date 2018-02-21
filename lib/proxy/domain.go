@@ -1,4 +1,4 @@
-package diskparser
+package proxy
 
 // 单域名信息
 type DomainInfo struct {

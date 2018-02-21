@@ -1,4 +1,4 @@
-package diskparser
+package cache
 
 type VersionNumber struct {
 	InkMajor int16 `json:"ink_major"`

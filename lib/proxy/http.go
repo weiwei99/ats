@@ -1,4 +1,4 @@
-package diskparser
+package proxy
 
 import (
 	"encoding/binary"
@@ -16,11 +16,11 @@ const (
 
 // HTTP信息
 type HTTPCacheAlt struct {
-	Magic        uint32   `json:"magic"`
-	RequestHdr   *HTTPHdr `json:"request_hdr"`
-	ResponseHdr  *HTTPHdr `json:"response_hdr"`
-	BeloneDir    *Dir     `json:"-"`
-	YYDiskOffset int64    `json:"yy_disk_offset"`
+	Magic       uint32   `json:"magic"`
+	RequestHdr  *HTTPHdr `json:"request_hdr"`
+	ResponseHdr *HTTPHdr `json:"response_hdr"`
+	//BeloneDir    *cache.Dir `json:"-"`
+	YYDiskOffset int64 `json:"yy_disk_offset"`
 }
 
 //class HTTPHdr : public MIMEHdr

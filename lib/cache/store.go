@@ -1,9 +1,15 @@
-package diskparser
+/*
+Initialization starts with an instance of Store reading the storage configuration file, by default storage.config.
+
+store 之后，就是 span
+*/
+package cache
 
 import (
 	"fmt"
 	"github.com/golang/glog"
 	"github.com/weiwei99/ats/lib/conf"
+	"github.com/weiwei99/ats/lib/disk"
 )
 
 type Store struct {
@@ -12,51 +18,25 @@ type Store struct {
 	Config *conf.ATSConfig `json:"-"`
 }
 
-type Span struct {
-	Blocks          int64    `json:"blocks"`
-	Offset          int64    `json:"offset"`
-	HWSectorSize    uint32   `json:"hw_sector_size"`
-	Alignment       uint32   `json:"alignment"`
-	Path            string   `json:"path"`
-	DiskId          [16]byte //
-	ForcedVolumeNum int      `json:"forced_volume_num"`
-}
-
-func NewSpan(path string) (*Span, error) {
-	sp := &Span{
-		ForcedVolumeNum: -1,
-		HWSectorSize:    256,
-		Path:            path,
-	}
-	// 填充BLOCKS等信息
-
-	return sp, nil
-}
-
-func (span *Span) TotalBlocks() int {
-
-	return 0
-}
-
 //
-func getGeometry() *Geometry {
+func GetGeometry() *disk.Geometry {
 
-	geos := make([]*Geometry, 0)
+	geos := make([]*disk.Geometry, 0)
 
-	BigGeo := &Geometry{
+	BigGeo := &disk.Geometry{
 		TotalSZ: 6001175126016,
 		BlockSZ: 11721045168,
 		AlignSZ: 0,
 	}
 	geos = append(geos, BigGeo)
 
-	SmallGeo := &Geometry{
+	SmallGeo := &disk.Geometry{
 		TotalSZ: 2147483648,
 		BlockSZ: 4194304,
 		AlignSZ: 0,
 	}
 	geos = append(geos, SmallGeo)
-	G5Geo := &Geometry{
+	G5Geo := &disk.Geometry{
 		TotalSZ: 5368709120,
 		BlockSZ: 10485760,
 		AlignSZ: 0,

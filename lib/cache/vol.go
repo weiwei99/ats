@@ -1,4 +1,4 @@
-package diskparser
+package cache
 
 import (
 	"encoding/binary"
@@ -34,13 +34,13 @@ type VolHeaderFooter struct {
 	AnalyseDiskOffset int64         `json:"analyse_disk_offset"`
 }
 
-type CacheVol struct {
-	VolNumber int `json:"vol_number"`
-	Scheme    int `json:"scheme"`
-	Size      int `json:"size"`
-	Vols      []*Vol
-	DiskVols  []*DiskVol
+// Vol的基本配置信息
+type VolConfig struct {
+	VolInfo              *DiskVolBlock
+	MinAverageObjectSize int
 }
+
+// 物理上的vol，即span
 type Vol struct {
 	Path                   string           `json:"path"`
 	Dir                    [][][]*Dir       `json:"-"`
@@ -59,9 +59,10 @@ type Vol struct {
 	AggBufPos              int              `json:"agg_buf_pos"`
 	YYMinAverageObjectSize int              `json:"yy_min_average_object_size"`
 	HitEvacuateWindow      int
-	Disk                   *CacheDisk
-	Conf                   *conf.ATSConfig `json:"-"`
-	ContentStartPos        int64           `json:"content_start_pos"`
+	//Disk                   *CacheDisk
+	Config          *VolConfig
+	Conf            *conf.ATSConfig `json:"-"`
+	ContentStartPos int64           `json:"content_start_pos"`
 
 	YYFullDir  []*Dir `json:"-"`
 	YYStaleDir []*Dir `json:"-"`
@@ -69,15 +70,17 @@ type Vol struct {
 	Content []*Doc `json:"-"`
 }
 
-func NewVol(cacheDisk *CacheDisk, minAverageObjectSize int) (*Vol, error) {
-	v := &Vol{}
-	v.Len = int64(cacheDisk.Header.VolInfo.Len * STORE_BLOCK_SIZE)
-	v.Disk = cacheDisk
-	v.Skip = int64(cacheDisk.Header.VolInfo.Offset)
+//
+func NewVol(config *VolConfig) (*Vol, error) {
+	v := &Vol{
+		Config: config,
+	}
+	v.Len = int64(config.VolInfo.Len * STORE_BLOCK_SIZE)
+	v.Skip = int64(config.VolInfo.Offset)
 	v.PrevRecoverPos = 0
-	v.Start = int64(cacheDisk.Header.VolInfo.Offset)
+	v.Start = int64(config.VolInfo.Offset)
 
-	v.YYMinAverageObjectSize = minAverageObjectSize
+	v.YYMinAverageObjectSize = config.MinAverageObjectSize
 	// 分析大小
 	v.initData()
 	v.DataBlocks = v.Len - (v.Start-v.Skip)/STORE_BLOCK_SIZE
@@ -87,82 +90,59 @@ func NewVol(cacheDisk *CacheDisk, minAverageObjectSize int) (*Vol, error) {
 	return v, nil
 }
 
-func (d *Vol) initData() {
-	d.initDataInternal()
-	d.initDataInternal()
-	d.initDataInternal()
-	d.allocDir()
+func (v *Vol) initData() {
+	v.initDataInternal()
+	v.initDataInternal()
+	v.initDataInternal()
+	v.allocDir()
 }
 
-func (d *Vol) initDataInternal() {
+func (v *Vol) initDataInternal() {
 	//var cache_config_min_average_object_size int64 = 512000 //8000
 	//var cache_config_min_average_object_size int64 = 8000
-	d.Buckets = (d.Len - (d.Start - d.Skip)) / int64(d.YYMinAverageObjectSize) / DIR_DEPTH
-	d.Segments = int((d.Buckets + (((1 << 16) - 1) / DIR_DEPTH)) / ((1 << 16) / DIR_DEPTH))
-	d.Buckets = (d.Buckets + int64(d.Segments) - 1) / int64(d.Segments)
-	d.Start = d.Skip + 2*int64(d.DirLen())
+	v.Buckets = (v.Len - (v.Start - v.Skip)) / int64(v.YYMinAverageObjectSize) / DIR_DEPTH
+	v.Segments = int((v.Buckets + (((1 << 16) - 1) / DIR_DEPTH)) / ((1 << 16) / DIR_DEPTH))
+	v.Buckets = (v.Buckets + int64(v.Segments) - 1) / int64(v.Segments)
+	v.Start = v.Skip + 2*int64(v.DirLen())
 }
 
-func (d *Vol) HeaderLen() int {
-	return RoundToStoreBlock(SIZEOF_VolHeaderFooter + 2*(d.Segments-1))
+func (v *Vol) HeaderLen() int {
+	return RoundToStoreBlock(SIZEOF_VolHeaderFooter + 2*(v.Segments-1))
 }
 
-func (d *Vol) DirLen() int {
+func (v *Vol) DirLen() int {
 	// TODO: d.Buckets 这个要改
-	return d.HeaderLen() +
-		RoundToStoreBlock(int(d.Buckets)*DIR_DEPTH*d.Segments*SIZEOF_DIR) +
+	return v.HeaderLen() +
+		RoundToStoreBlock(int(v.Buckets)*DIR_DEPTH*v.Segments*SIZEOF_DIR) +
 		RoundToStoreBlock(SIZEOF_VolHeaderFooter)
 }
 
-func (d *Vol) DirEntries() int {
-	return int(d.Buckets) * DIR_DEPTH * d.Segments
+func (v *Vol) DirEntries() int {
+	return int(v.Buckets) * DIR_DEPTH * v.Segments
 }
 
 // 申请Dir空间
-func (d *Vol) allocDir() {
+func (v *Vol) allocDir() {
 	// 预申请空间
-	d.Dir = make([][][]*Dir, d.Segments)
-	for idxs, _ := range d.Dir {
-		d.Dir[idxs] = make([][]*Dir, d.Buckets)
-		for idxb, _ := range d.Dir[idxs] {
-			d.Dir[idxs][idxb] = make([]*Dir, DIR_DEPTH)
-			for idxd, _ := range d.Dir[idxs][idxb] {
-				d.Dir[idxs][idxb][idxd] = &Dir{
-					IdxSegment: idxs,
-					IdxBucket:  idxb,
-					IdxDepth:   idxd,
-					Next:       0,
-				}
-			}
-		}
-	}
-}
+	v.Dir = make([][][]*Dir, v.Segments)
+	for idxs, _ := range v.Dir {
+		v.Dir[idxs] = make([][]*Dir, v.Buckets)
+		for idxb, _ := range v.Dir[idxs] {
+			v.Dir[idxs][idxb] = make([]*Dir, DIR_DEPTH)
+			for idxd, _ := range v.Dir[idxs][idxb] {
+				v.Dir[idxs][idxb][idxd] = &Dir{
+					Index: &DirPos{
+						Segment: idxs,
+						Bucket:  idxb,
+						Depth:   idxd,
+						Vol:     v,
+					},
 
-// 填充dir数据
-func (v *Vol) LoadDirs(start int64, buffer []byte) error {
-	if len(buffer) != v.DirEntries()*SIZEOF_DIR {
-		return fmt.Errorf("buffer len not much")
-	}
-	for s := 0; s < v.Segments; s++ {
-		sOffset := s * int(v.Buckets) * DIR_DEPTH
-		for b := 0; b < int(v.Buckets); b++ {
-			bOffset := sOffset + b*DIR_DEPTH
-			for d := 0; d < DIR_DEPTH; d++ {
-				offset := (bOffset + d) * SIZEOF_DIR
-				dir, err := NewDir(buffer[offset : offset+SIZEOF_DIR])
-				if err != nil {
-					return fmt.Errorf("wrong dir pos [%d, %d, %d], err: %s", s, b, d, err.Error())
+					Next: 0,
 				}
-				dir.IdxSegment = s
-				dir.IdxBucket = b
-				dir.IdxDepth = d
-				v.Dir[s][b][d] = dir
-				//v.Dir[s][b][d].LoadFromBuffer(buffer[offset : offset+SIZEOF_DIR])
-				v.Dir[s][b][d].IdxOffset = start + int64(offset)
 			}
 		}
 	}
-	return nil
 }
 
 func (v *Vol) DirCheck(afix bool) int {
@@ -206,7 +186,7 @@ func (v *Vol) DirCheck(afix bool) int {
 		last = t
 		free += v.DirFreelistLength(s)
 	}
-	fmt.Printf(" Directory for [%s %d:%d]\n", v.Disk.Path, v.Disk.Header.VolInfo.Offset, v.Disk.Header.VolInfo.Len)
+	//fmt.Printf(" Directory for [%s %d:%d]\n", v.Disk.Path, v.Disk.Header.VolInfo.Offset, v.Disk.Header.VolInfo.Len)
 	fmt.Printf(" Bytes: [%d]\n", v.Buckets*int64(v.Segments)*DIR_DEPTH*SIZEOF_DIR)
 	fmt.Printf(" Segments: %d\n", int64(v.Segments))
 	fmt.Printf(" Buckets %d\n", v.Buckets)
@@ -310,7 +290,7 @@ func (v *Vol) DirBucketRow(b *Dir, i int) *Dir {
 }
 
 func (v *Vol) DirInSeg(dir *Dir, i int) *Dir {
-	s, b, d := dir.IdxSegment, dir.IdxBucket, dir.IdxDepth
+	s, b, d := dir.Index.Segment, dir.Index.Bucket, dir.Index.Depth
 	pos := s*int(v.Buckets)*DIR_DEPTH + b*DIR_DEPTH + d + i
 
 	if pos > v.Segments*int(v.Buckets)*DIR_DEPTH {
@@ -379,52 +359,5 @@ func (v *Vol) DirProbe(key []byte) (*Dir, **Dir) {
 }
 
 func (v *Vol) DirBucket(b int, s *Dir) *Dir {
-	return v.Dir[s.IdxSegment][b][0]
-}
-
-func NewVolHeaderFooter(buffer []byte) (*VolHeaderFooter, error) {
-
-	vf := VolHeaderFooter{}
-
-	curPos := 0
-	vf.Magic = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
-	curPos += 4
-	//if vf.Magic != VOL_MAGIC {
-	//	return nil, fmt.Errorf("vol magic not match")
-	//}
-
-	vf.Version.InkMajor = int16(binary.LittleEndian.Uint16(buffer[curPos : curPos+2]))
-	curPos += 2
-	vf.Version.InkMinor = int16(binary.LittleEndian.Uint16(buffer[curPos : curPos+2]))
-	curPos += 2
-
-	vf.CreateTime = binary.LittleEndian.Uint64(buffer[curPos : curPos+8])
-	curPos += 8
-
-	vf.WritePos = int64(binary.LittleEndian.Uint64(buffer[curPos : curPos+8]))
-	curPos += 8
-
-	vf.LastWritePos = int64(binary.LittleEndian.Uint64(buffer[curPos : curPos+8]))
-	curPos += 8
-	vf.AggPos = int64(binary.LittleEndian.Uint64(buffer[curPos : curPos+8]))
-	curPos += 8
-	vf.Generation = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
-	curPos += 4
-	vf.Phase = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
-	curPos += 4
-	vf.Cycle = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
-	curPos += 4
-	vf.SyncSerial = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
-	curPos += 4
-	vf.WriteSerial = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
-	curPos += 4
-	vf.Dirty = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
-	curPos += 4
-	vf.SectorSize = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
-	curPos += 4
-	vf.Unused = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
-	curPos += 4
-	//vf.FreeList = binary.LittleEndian.Uint16(buffer[curPos : curPos+2])
-
-	return &vf, nil
+	return v.Dir[s.Index.Segment][b][0]
 }

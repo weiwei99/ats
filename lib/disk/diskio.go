@@ -1,4 +1,4 @@
-package diskparser
+package disk
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-type DiskReader struct {
+type Reader struct {
 	Path             string   `json:"path"`
 	File             *os.File `json:"-"`
 	Fd               *int     `json:"-"`
@@ -17,7 +17,7 @@ type DiskReader struct {
 	StatIoSpeed      float64  `json:"stat_io_speed"`
 }
 
-func (dio *DiskReader) Open(path string) error {
+func (dio *Reader) Open(path string) error {
 	_, err := os.Stat("path")
 	if os.IsNotExist(err) {
 		fd, err := syscall.Open(path, syscall.O_RDONLY, 0777)
@@ -46,7 +46,7 @@ func (dio *DiskReader) Open(path string) error {
 	return nil
 }
 
-func (dio *DiskReader) read(offset, size int64) ([]byte, error) {
+func (dio *Reader) Read(offset, size int64) ([]byte, error) {
 
 	ret := make([]byte, size)
 	start := time.Now().UnixNano()
@@ -78,7 +78,7 @@ func (dio *DiskReader) read(offset, size int64) ([]byte, error) {
 	return ret, nil
 }
 
-func (dio *DiskReader) DumpStat() string {
+func (dio *Reader) DumpStat() string {
 
 	dio.StatIoSpeed = float64(dio.StatReadBytes) / 1024 / 1024 / (float64(dio.StatCostTimeNano) / 1000 / 1000 / 1000)
 
