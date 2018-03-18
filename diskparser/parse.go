@@ -33,6 +33,7 @@ func (cparser *CacheParser) ParseMain(path string) error {
 }
 
 func (cparser *CacheParser) MainParse() error {
+	// 分析Cache结构
 	for _, v := range cparser.CacheDisks {
 		config := disklayout.Config{}
 		lo := disklayout.NewLayout(v, &config)
@@ -41,6 +42,27 @@ func (cparser *CacheParser) MainParse() error {
 			return err
 		}
 	}
+	// 创建CacheVol,等价于cplist_xxx
+	// create the cachevol list only if num volumes are greater
+	// than 0.
+	cvm := cache.NewCacheVolumes(cparser.CacheDisks, cparser.Conf.ConfigVolumes)
+	if cparser.Conf.ConfigVolumes.NumVolumes == 0 {
+		cvm.Reconfigure()
+		/* if no volumes, default to just an http cache */
+	} else {
+		// else
+		// create the cachevol list.
+		err := cvm.Init()
+		if err != nil {
+			return err
+		}
+		/* now change the cachevol list based on the config file */
+		cvm.Reconfigure()
+	}
+
+	// 建立Cache对象HASH表
+
+	//cache.NewHostRecord()
 	return nil
 }
 

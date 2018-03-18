@@ -9,14 +9,6 @@ import (
 	"strconv"
 )
 
-// HASH值占16个字节
-type CryptoHash struct {
-	U64 [2]uint64
-	B   [2]uint64
-	U32 [4]uint32
-	U8  [16]uint8
-}
-
 type CacheURL struct {
 }
 

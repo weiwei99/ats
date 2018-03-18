@@ -10,6 +10,7 @@ type ATSConfig struct {
 	MinAverageObjectSize int
 	Storages             []string
 	RemapConfigPath      string
+	ConfigVolumes        *ConfigVolumes
 }
 
 func NewAtsConfig(path string) (*ATSConfig, error) {
@@ -21,8 +22,15 @@ func NewAtsConfig(path string) (*ATSConfig, error) {
 	ac.Path = strings.TrimSuffix(ac.Path, "/")
 	ac.Path += "/"
 
+	// 加载cachevol配置
+	configVols, err := ac.loadConfigVolumes()
+	if err != nil {
+		return nil, err
+	}
+	ac.ConfigVolumes = configVols
+
 	//
-	err := ac.loadRecords()
+	err = ac.loadRecords()
 	if err != nil {
 		return nil, err
 	}

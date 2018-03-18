@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/golang/glog"
 	"github.com/weiwei99/ats/lib/conf"
 )
 
@@ -58,6 +59,7 @@ type Vol struct {
 	DataBlocks             int64            `json:"data_blocks"`
 	AggBufPos              int              `json:"agg_buf_pos"`
 	YYMinAverageObjectSize int              `json:"yy_min_average_object_size"`
+	HashText               string           `json:"hash_text"`
 	HitEvacuateWindow      int
 	//Disk                   *CacheDisk
 	Config          *VolConfig
@@ -87,6 +89,8 @@ func NewVol(config *VolConfig) (*Vol, error) {
 	cache_config_hit_evacuate_percent := 10
 	v.HitEvacuateWindow = int(v.DataBlocks) * cache_config_hit_evacuate_percent / 100
 
+	v.HashText = fmt.Sprintf("%s %d:%d", "/dev/sdb", v.Skip, v.Config.VolInfo.Len)
+	glog.Errorf("%s", v.HashText)
 	return v, nil
 }
 

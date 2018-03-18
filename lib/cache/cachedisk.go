@@ -44,10 +44,12 @@ const (
 	START = 8192
 )
 
+// 对应文档中的stripe
 type DiskVol struct {
 	NumVolBlocks int
 	VolNumber    int
 	Size         uint64
+	Disk         *CacheDisk
 }
 
 type DiskVolBlock struct {
