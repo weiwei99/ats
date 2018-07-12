@@ -123,6 +123,8 @@ type CacheDisk struct {
 	Dio                 *disk.Reader
 	AtsConf             *conf.ATSConfig
 	DocLoadMutex        *sync.RWMutex
+
+	YYScanDirCount int // 用于扫描dir计数
 }
 
 func NewCacheDisk(path string, atsconf *conf.ATSConfig) (*CacheDisk, error) {
@@ -297,14 +299,14 @@ func (cd *CacheDisk) ScanHttpObject() {
 	}
 }
 
-func (cd *CacheDisk) LoadReadyDocCount() (int, int) {
+func (cd *CacheDisk) LoadReadyDirCount() (int, int) {
 	if cd.YYVol == nil {
 		return 0, 0
 	}
 	v := cd.YYVol
 	cd.DocLoadMutex.RLock()
 	defer cd.DocLoadMutex.RUnlock()
-	return len(v.Content), len(v.YYFullDir)
+	return cd.YYScanDirCount, len(v.YYFullDir)
 }
 
 //
@@ -322,9 +324,13 @@ func (cd *CacheDisk) ExtractDocs(max int) error {
 		max = len(v.YYFullDir)
 	}
 	//fmt.Printf("total FullDir : %d, need parse: %d\n", len(v.YYFullDir), max)
-	for _, dir := range v.YYFullDir {
+	for i, dir := range v.YYFullDir {
 		//cc, _ := json.Marshal(dir)
 		//fmt.Printf("dir %d: %s\n", i, string(cc))
+
+		cd.DocLoadMutex.Lock()
+		cd.YYScanDirCount = i + 1
+		cd.DocLoadMutex.Unlock()
 
 		docPos := int64(dir.Offset-1)*DEFAULT_HW_SECTOR_SIZE + v.ContentStartPos
 		buff, err := cd.Dio.Read(docPos, 72)
@@ -342,10 +348,11 @@ func (cd *CacheDisk) ExtractDocs(max int) error {
 		}
 		httpinfo, err := cd.ExtractHttpInfoHeader(newDoc)
 		if err != nil {
+			fmt.Println(err)
 			continue
 		}
 
-		if httpinfo.RequestHdr != nil && httpinfo.RequestHdr.HdrHeep != nil {
+		if httpinfo != nil && httpinfo.RequestHdr != nil && httpinfo.RequestHdr.HdrHeep != nil {
 			if httpinfo.RequestHdr.HdrHeep.URL != nil {
 				fmt.Printf("%s\n", httpinfo.RequestHdr.HdrHeep.URL)
 			}
@@ -357,9 +364,6 @@ func (cd *CacheDisk) ExtractDocs(max int) error {
 		//	continue
 		//}
 
-		cd.DocLoadMutex.Lock()
-		v.Content = append(v.Content, newDoc)
-		cd.DocLoadMutex.Unlock()
 		max = max - 1
 		if max < 1 {
 			break
@@ -376,7 +380,7 @@ func (cd *CacheDisk) ExtractHttpInfoHeader(doc *Doc) (*proxy.HTTPCacheAlt, error
 		return nil, fmt.Errorf("doc magic not match")
 	}
 	if doc.HLen == 0 {
-		return nil, fmt.Errorf("doc is empty")
+		return nil, fmt.Errorf("doc hlen is 0")
 	}
 
 	startPos := doc.YYDiskOffset + 72

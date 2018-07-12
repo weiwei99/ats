@@ -2,6 +2,7 @@ package cache
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/golang/glog"
@@ -334,10 +335,10 @@ func (v *Vol) DirProbe(key []byte) (*Dir, **Dir) {
 	DIR_TAG_WIDTH := 12
 	seg := v.DirSegment(int(s))
 	e := v.DirBucket(int(b), seg)
-	fmt.Printf("dirprobe....%d, %d\n", s, b)
-	fmt.Println(key)
+	fmt.Printf("dirprobe....<segment %d, bucket: %d>\n", s, b)
+	fmt.Println(hex.EncodeToString(key))
 	estr, _ := json.Marshal(e)
-	fmt.Printf("e: %s\n", estr)
+	fmt.Printf("dir e: %s\n", estr)
 
 	if e.Offset != 0 {
 		for {

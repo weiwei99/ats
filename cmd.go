@@ -141,9 +141,9 @@ var ExtractDocsCmd = &ishell.Cmd{
 		var ready, total int
 		for {
 			for _, v := range GATSClient.CacheParser.CacheDisks {
-				diskReady, diskTotal := v.LoadReadyDocCount()
-				ready += diskReady
-				total += diskTotal
+				dirReady, dirTotal := v.LoadReadyDirCount()
+				ready += dirReady
+				total += dirTotal
 			}
 
 			if docNum > 0 && docNum < total {
