@@ -41,11 +41,13 @@ func (lo *Layout) ParseLevel1() error {
 
 	// 分析Vol,一定要用NumVolumes，不能枚举VolInfos，因为VolInfos是全部空间
 	for i := 0; i < int(cd.Header.NumVolumes); i++ {
-		_, err := lo.parseVol(cd.Header.VolInfos[i])
+		vol, err := lo.parseVol(cd.Header.VolInfos[i])
 		if err != nil {
 			fmt.Println(err)
 			return err
 		}
+		// 一个cd里面，应该有多个vol吧？？？
+		cd.YYVol = vol
 	}
 
 	//cd.YYVol = vol

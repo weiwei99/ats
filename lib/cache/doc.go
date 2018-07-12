@@ -94,3 +94,11 @@ func (d *Doc) LoadFromDisk(buffer []byte) error {
 
 	return nil
 }
+
+func (d *Doc) DataLen() uint32 {
+	return d.Len - SIZEOF_DOC - d.HLen
+}
+
+func (d *Doc) SingleFragment() bool {
+	return d.DataLen() == uint32(d.TotalLen)
+}

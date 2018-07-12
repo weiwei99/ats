@@ -12,22 +12,6 @@ import (
 type CacheURL struct {
 }
 
-type CacheHostTable struct {
-	CacheType  int // 缓存类型
-	NumEntries int
-	GenHostRec CacheHostRecord
-}
-
-//
-type CacheHostRecord struct {
-	CacheType int
-	//Vols           [][]cache.Vol
-	GoodNumVols    int
-	NumVols        int
-	NumInitialized int
-	VolHashTable   []uint16 // url计算hash, 截取hash，在VolHashTable，找到vol编码，根据VOL编号，找到VOL
-}
-
 // 根据URL产生KEY
 func (cu *CacheURL) HashGet(url *url.URL) []byte {
 
@@ -103,3 +87,5 @@ func (cu *CacheURL) KeyToDir(key []byte) {
 	a := binary.LittleEndian.Uint32(key[0:4]) % uint32(OPEN_DIR_BUCKETS)
 	fmt.Println(a)
 }
+
+//

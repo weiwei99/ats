@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/abiosoft/ishell"
+	"github.com/weiwei99/ats/lib/cache"
 	"net/url"
 	"strconv"
 	"time"
@@ -29,6 +30,26 @@ var SetCmd = &ishell.Cmd{
 		}
 		fmt.Println(atsCli.AtsConf.Dump())
 		GATSClient = atsCli
+	},
+}
+
+// 以cache process为开始，内部会进行解析
+var CacheProcessEntryCmd = &ishell.Cmd{
+	Name: "process",
+	Help: "类似 cache processor",
+	Func: func(c *ishell.Context) {
+		if GATSClient.CacheParser.Conf == nil {
+			fmt.Println("use conf command first")
+			return
+		}
+		proc, err := cache.NewCacheProcesser(GATSClient.AtsConf)
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+		err = proc.Start()
+		if err != nil {
+			fmt.Println(err.Error())
+		}
 	},
 }
 
@@ -193,10 +214,12 @@ var StatDIOCmd = &ishell.Cmd{
 	},
 }
 
+//
 func welcome() string {
 	return "ATS DiskParser Shell"
 }
 
+//
 func CommandLoop() {
 	shell := ishell.New()
 	shell.Println(welcome())
@@ -207,5 +230,6 @@ func CommandLoop() {
 	shell.AddCmd(FindObjectCmd)
 	shell.AddCmd(DumpDiskCmd)
 	shell.AddCmd(DumpVolCmd)
+	shell.AddCmd(CacheProcessEntryCmd)
 	shell.Run()
 }

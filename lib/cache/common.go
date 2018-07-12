@@ -20,3 +20,8 @@ func AtsPagesize() int {
 func AtsAlign() {
 
 }
+
+func NextRand(v int) int {
+	seed := 1103515145*v + 12345
+	return seed
+}

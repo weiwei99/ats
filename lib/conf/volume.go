@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/golang/glog"
 	"io"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -30,7 +31,7 @@ type ConfigVol struct {
 }
 
 func (ac *ATSConfig) loadConfigVolumes() (*ConfigVolumes, error) {
-	filename := ac.Path + "volume.config "
+	filename := filepath.Join(ac.Path, "volume.config")
 	configReader, err := NewConfigReader(filename)
 	if err != nil {
 		fmt.Printf("Error: %s\n", err)
@@ -39,7 +40,8 @@ func (ac *ATSConfig) loadConfigVolumes() (*ConfigVolumes, error) {
 	defer configReader.Close()
 
 	cvs := &ConfigVolumes{
-		CPQueue: make([]*ConfigVol, 0),
+		NumVolumes: 0,
+		CPQueue:    make([]*ConfigVol, 0),
 	}
 	for {
 		a, c := configReader.ReadLine()
@@ -56,29 +58,46 @@ func (ac *ATSConfig) loadConfigVolumes() (*ConfigVolumes, error) {
 		}
 		cv := ConfigVol{}
 		// vol number
-		volNumber, err := strconv.Atoi(objs[0])
+		volTag, volNumberStr, err := KVParse(objs[0])
+		if volTag != "volume" || err != nil {
+			glog.Errorf("unknown filed: %s", volTag)
+			continue
+		}
+		volNumber, err := strconv.Atoi(volNumberStr)
 		if err != nil || !(volNumber > 0 && volNumber < 255) {
-			glog.Error("parse vol number failed")
+			if err != nil {
+				glog.Errorf("parse vol number failed: %s", err.Error())
+			} else {
+				glog.Error("parse vol number failed, vol number must between 0 - 255, but current %D", volNumber)
+			}
 			continue
 		}
 		cv.Number = volNumber
+
 		// scheme
-		if objs[1] == "http" {
+		schemeField, schemeValue, err := KVParse(objs[1])
+		if schemeField != "scheme" || err != nil {
+			glog.Errorf("unknown filed: %s", volTag)
+			continue
+		}
+		if schemeValue == "http" {
 			cv.Scheme = 1 // CACHE_HTTP_TYPE
-		} else if objs[1] == "mixt" {
+		} else if schemeValue == "mixt" {
 			cv.Scheme = 2 // CACHE_RTSP_TYPE
 		} else {
 			glog.Error("parse scheme failed")
 			continue
 		}
+
 		// size
-		if len(objs[2]) < 2 {
-			glog.Errorf("parse size failed")
+		sizeField, sizeValue, err := KVParse(objs[2])
+		if sizeField != "size" || err != nil {
+			glog.Errorf("unknown filed: %s", sizeField)
 			continue
 		}
-		if (objs[2][len(objs[2])-1:]) == "%" {
+		if (sizeValue[len(sizeValue)-1:]) == "%" {
 			cv.InPercent = true
-			size, err := strconv.Atoi(objs[2][:len(objs[2])-1])
+			size, err := strconv.Atoi(sizeValue[:len(sizeValue)-1])
 			if err != nil {
 				glog.Errorf("parse size 3 failed")
 				continue
@@ -89,7 +108,7 @@ func (ac *ATSConfig) loadConfigVolumes() (*ConfigVolumes, error) {
 			}
 			cv.Percent = size
 		} else {
-			size, err := strconv.Atoi(objs[2])
+			size, err := strconv.Atoi(sizeValue)
 			if err != nil {
 				glog.Errorf("parse size 2 failed")
 				continue
@@ -98,6 +117,7 @@ func (ac *ATSConfig) loadConfigVolumes() (*ConfigVolumes, error) {
 			cv.InPercent = false
 		}
 		cvs.CPQueue = append(cvs.CPQueue, &cv)
+		cvs.NumVolumes++
 	}
 	return cvs, nil
 }

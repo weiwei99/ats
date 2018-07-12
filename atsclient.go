@@ -8,9 +8,9 @@ import (
 )
 
 type ATSClient struct {
-	CacheParser  *diskparser.CacheParser
-	RemapService *proxy.RemapService
-	AtsConf      *conf.ATSConfig
+	CacheParser  *diskparser.CacheParser // cache分析器
+	RemapService *proxy.RemapService     // remap服务
+	AtsConf      *conf.ATSConfig         // 配置文件
 
 	initialize bool
 }

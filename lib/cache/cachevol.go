@@ -83,15 +83,15 @@ func (cv *CacheVolumeManager) Reconfigure() error {
 	if cv.Config.NumVolumes == 0 {
 		// 1. volume的配置文件为空，即采用http方式
 		/* only the http cache */
-		cp, _ := NewCacheVol(nil)
-		cp.VolNumber = 0
-		cp.Scheme = 1 // CACHE_HTTP_TYPE
-		cp.DiskVols = make([]*DiskVol, len(cv.CacheDisks))
+		cacheVol, _ := NewCacheVol(nil)
+		cacheVol.VolNumber = 0
+		cacheVol.Scheme = 1 // CACHE_HTTP_TYPE
+		cacheVol.DiskVols = make([]*DiskVol, len(cv.CacheDisks))
 
-		for idx, dv := range cp.DiskVols {
-			cp.Size += dv.Size
-			cp.DiskVols[idx] = dv
-			cp.NumVols += dv.NumVolBlocks
+		for idx, dv := range cacheVol.DiskVols {
+			cacheVol.Size += dv.Size            // cache vol的容量为，各个磁盘的总和
+			cacheVol.DiskVols[idx] = dv         // 磁盘vol引用
+			cacheVol.NumVols += dv.NumVolBlocks // 类似Size
 		}
 	} else {
 		// 2. 遵循volume配置方式
@@ -137,6 +137,7 @@ func (cv *CacheVolumeManager) Reconfigure() error {
 		// 2.3 处理配置中为SIZE的情况，这种情况相对复杂，因为要将CacheVol的大小按比例分摊到各个Disk中去
 
 	}
+	return nil
 }
 
 //

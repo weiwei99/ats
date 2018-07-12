@@ -16,8 +16,9 @@ func NewCacheParser(atsconf *conf.ATSConfig) (*CacheParser, error) {
 	cp := &CacheParser{
 		CacheDisks: make([]*cache.CacheDisk, 0),
 	}
-
+	//test := []string{"/export/servers/trafficserver/cache/cache.db"}
 	for _, v := range atsconf.Storages {
+		//for _, v := range test {
 		cdisk, err := cache.NewCacheDisk(v, atsconf)
 		if err != nil {
 			return nil, err
@@ -45,20 +46,20 @@ func (cparser *CacheParser) MainParse() error {
 	// 创建CacheVol,等价于cplist_xxx
 	// create the cachevol list only if num volumes are greater
 	// than 0.
-	cvm := cache.NewCacheVolumes(cparser.CacheDisks, cparser.Conf.ConfigVolumes)
-	if cparser.Conf.ConfigVolumes.NumVolumes == 0 {
-		cvm.Reconfigure()
-		/* if no volumes, default to just an http cache */
-	} else {
-		// else
-		// create the cachevol list.
-		err := cvm.Init()
-		if err != nil {
-			return err
-		}
-		/* now change the cachevol list based on the config file */
-		cvm.Reconfigure()
-	}
+	//cvm := cache.NewCacheVolumes(cparser.CacheDisks, cparser.Conf.ConfigVolumes)
+	//if cparser.Conf.ConfigVolumes.NumVolumes == 0 {
+	//	cvm.Reconfigure()
+	//	/* if no volumes, default to just an http cache */
+	//} else {
+	//	// else
+	//	// create the cachevol list.
+	//	err := cvm.Init()
+	//	if err != nil {
+	//		return err
+	//	}
+	//	/* now change the cachevol list based on the config file */
+	//	cvm.Reconfigure()
+	//}
 
 	// 建立Cache对象HASH表
 

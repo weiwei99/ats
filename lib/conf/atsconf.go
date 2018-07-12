@@ -29,17 +29,17 @@ func NewAtsConfig(path string) (*ATSConfig, error) {
 	}
 	ac.ConfigVolumes = configVols
 
-	//
+	// records配置
 	err = ac.loadRecords()
 	if err != nil {
 		return nil, err
 	}
-	//
+	// storage配置
 	err = ac.loadStorage()
 	if err != nil {
 		return nil, err
 	}
-	//
+	// remap配置
 	ac.RemapConfigPath = ac.Path + "remap.config"
 	return ac, nil
 }

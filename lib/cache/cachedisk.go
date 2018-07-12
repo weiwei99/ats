@@ -11,6 +11,7 @@ import (
 	//"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/golang/glog"
 	"github.com/weiwei99/ats/lib/conf"
 	"github.com/weiwei99/ats/lib/disk"
 	"github.com/weiwei99/ats/lib/proxy"
@@ -46,9 +47,9 @@ const (
 
 // 对应文档中的stripe
 type DiskVol struct {
-	NumVolBlocks int
-	VolNumber    int
-	Size         uint64
+	NumVolBlocks int    /* number of disk volume blocks in this volume */
+	VolNumber    int    /* the volume number of this volume */
+	Size         uint64 /* size in store blocks */
 	Disk         *CacheDisk
 }
 
@@ -90,12 +91,12 @@ const (
 // 磁盘头，一个磁盘可以有多个Volume
 type DiskHeader struct {
 	Magic          uint32          `json:"magic"`
-	NumVolumes     uint32          `json:"num_volumes"`
-	NumFree        uint32          `json:"num_free"`
-	NumUsed        uint32          `json:"num_used"`
-	NumDiskvolBlks uint32          `json:"num_diskvol_blks"`
-	NumBlocks      uint64          `json:"num_blocks"`
-	VolInfos       []*DiskVolBlock `json:"-"` // 存储在磁盘上的stripe信息
+	NumVolumes     uint32          `json:"num_volumes"`      /* number of discrete volumes (DiskVol) */
+	NumFree        uint32          `json:"num_free"`         /* number of disk volume blocks free */
+	NumUsed        uint32          `json:"num_used"`         /* number of disk volume blocks in use */
+	NumDiskvolBlks uint32          `json:"num_diskvol_blks"` /* number of disk volume blocks */
+	NumBlocks      uint64          `json:"num_blocks"`       //
+	VolInfos       []*DiskVolBlock `json:"-"`                // 存储在磁盘上的stripe信息
 }
 
 // 磁盘信息
@@ -104,7 +105,7 @@ type CacheDisk struct {
 	HeaderLen           int64       `json:"header_len"` // 磁盘头长度
 	Geometry            *disk.Geometry
 	Path                string `json:"path"`
-	Len                 int64  `json:"len"`
+	Len                 int64  `json:"len"` // in blocks (STORE_BLOCK)
 	Start               int64  `json:"start"`
 	Skip                int64  `json:"skip"`
 	NumUsableBlocks     int64  `json:"num_usable_blocks"`
@@ -169,6 +170,12 @@ func NewCacheDisk(path string, atsconf *conf.ATSConfig) (*CacheDisk, error) {
 	return cd, nil
 }
 
+// 类似于 NewCacheDisk
+func (cd *CacheDisk) Open(path string, blocks int, askip int, ahw_sector_size int, fildes int, clear bool) int {
+
+	return 0
+}
+
 // 创建磁盘vol
 // @volIdx vol索引号
 // @volSizeInBlocks vol期望申请大小
@@ -227,13 +234,38 @@ func (cd *CacheDisk) FindURL(urlStr string) (*Doc, error) {
 	u11, _ := url.Parse(urlStr)
 
 	hash := u.HashGet(u11)
+
 	fmt.Println(hash)
 	fmt.Println(binary.LittleEndian.Uint32(hash[0:4]))
-	d1, d2 := cd.YYVol.DirProbe(hash)
+
+	newDoc, err := cd.FindDoc(hash)
+	if err != nil {
+		return nil, err
+	}
+
+	docStr, _ := json.Marshal(newDoc)
+	fmt.Printf("-------- found: %s\n", docStr)
+
+	if !newDoc.SingleFragment() {
+		nextKey := NextCacheKey(hash)
+
+		nextDoc, err := cd.FindDoc(nextKey)
+		if err != nil {
+			fmt.Println(err)
+			return nil, err
+		}
+		docStr, _ := json.Marshal(nextDoc)
+		fmt.Printf("-------- found next fragment: %s\n", docStr)
+
+	}
+	return newDoc, nil
+}
+
+func (cd *CacheDisk) FindDoc(key []byte) (*Doc, error) {
+	d1, d2 := cd.YYVol.DirProbe(key)
 	fmt.Printf("result: %s, %s\n", d1, d2)
 	if d1 == nil {
-		fmt.Println("no dir found!")
-		return nil, nil
+		return nil, fmt.Errorf("no dir found!")
 	}
 
 	// get doc from dir
@@ -246,6 +278,7 @@ func (cd *CacheDisk) FindURL(urlStr string) (*Doc, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse doc failed: %s", err.Error())
 	}
+	newDoc.YYDiskOffset = docPos
 	return newDoc, nil
 }
 
@@ -277,6 +310,11 @@ func (cd *CacheDisk) LoadReadyDocCount() (int, int) {
 //
 func (cd *CacheDisk) ExtractDocs(max int) error {
 
+	glog.V(10).Infof("try to extract docs for disk: %s", cd.Path)
+	if cd.YYVol == nil {
+		return fmt.Errorf("%s", "cache do not initialize")
+	}
+
 	v := cd.YYVol
 	v.Content = make([]*Doc, 0)
 
@@ -285,8 +323,8 @@ func (cd *CacheDisk) ExtractDocs(max int) error {
 	}
 	//fmt.Printf("total FullDir : %d, need parse: %d\n", len(v.YYFullDir), max)
 	for _, dir := range v.YYFullDir {
-		cc, _ := json.Marshal(dir)
-		fmt.Println(string(cc))
+		//cc, _ := json.Marshal(dir)
+		//fmt.Printf("dir %d: %s\n", i, string(cc))
 
 		docPos := int64(dir.Offset-1)*DEFAULT_HW_SECTOR_SIZE + v.ContentStartPos
 		buff, err := cd.Dio.Read(docPos, 72)
@@ -302,6 +340,19 @@ func (cd *CacheDisk) ExtractDocs(max int) error {
 		if newDoc.Magic != DOC_MAGIC {
 			return fmt.Errorf("doc magic not match")
 		}
+		httpinfo, err := cd.ExtractHttpInfoHeader(newDoc)
+		if err != nil {
+			continue
+		}
+
+		if httpinfo.RequestHdr != nil && httpinfo.RequestHdr.HdrHeep != nil {
+			if httpinfo.RequestHdr.HdrHeep.URL != nil {
+				fmt.Printf("%s\n", httpinfo.RequestHdr.HdrHeep.URL)
+			}
+		}
+
+		//dd, _ := json.Marshal(newDoc)
+		//fmt.Printf("dir %d: %s\n", i, string(dd))
 		//if newDoc.HLen == 0 {
 		//	continue
 		//}
