@@ -64,13 +64,12 @@ func (hca *HTTPCacheAlt) LoadFromBuffer(buffer []byte) error {
 	hca.Magic = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
 	curPos += 4
 	if hca.Magic != CACHE_ALT_MAGIC_MARSHALED {
-		return nil
+		return fmt.Errorf("magic not match")
 	}
 
 	// request header process
 	//fmt.Println("------begin parse request info----")
 	requestHeader := &HTTPHdr{}
-	hca.RequestHdr = requestHeader
 
 	requestHeader.YYDiskOffset = hca.YYDiskOffset + 48
 	curPos = 48
@@ -79,15 +78,15 @@ func (hca *HTTPCacheAlt) LoadFromBuffer(buffer []byte) error {
 	curPos = requestHeader.HeapPos
 	reqHeap, err := UnmarshalHeap(buffer[curPos:])
 	if err != nil {
-		return err
+		return fmt.Errorf("unmarshalheap failed: %s", err.Error())
 	}
 	reqHeap.YYDiskOffset = hca.YYDiskOffset + requestHeader.HeapPos // 248
 	requestHeader.HdrHeep = reqHeap
+	hca.RequestHdr = requestHeader
 
 	// response header process
 	//fmt.Println("------begin parse reponse info----")
 	responseHeader := &HTTPHdr{}
-	hca.RequestHdr = responseHeader
 	responseHeader.YYDiskOffset = hca.YYDiskOffset + 112
 	curPos = 112
 	responseHeader.HeapPos = int64(binary.LittleEndian.Uint64(buffer[curPos : curPos+8]))
@@ -98,20 +97,8 @@ func (hca *HTTPCacheAlt) LoadFromBuffer(buffer []byte) error {
 	}
 	respHeap.YYDiskOffset = hca.YYDiskOffset + requestHeader.HeapPos // 248
 	responseHeader.HdrHeep = respHeap
+	hca.ResponseHdr = responseHeader
 
-	for _, v := range responseHeader.HdrHeep.HdrObjects {
-		if v.MType == uint32(HDR_HEAP_OBJ_HTTP_HEADER) {
-			status := int(v.HttpHdr.Status)
-			if status != 200 && status != 206 {
-				fmt.Printf("Code: %d, Url: %s://%s/%s?%s\n",
-					status,
-					requestHeader.HdrHeep.URL.Scheme,
-					requestHeader.HdrHeep.URL.Host,
-					requestHeader.HdrHeep.URL.Path,
-					requestHeader.HdrHeep.URL.Query)
-			}
-		}
-	}
 	return nil
 }
 

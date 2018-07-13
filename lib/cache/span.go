@@ -15,22 +15,26 @@ done in ink_cache_init() called during startup.
 */
 package cache
 
+import "github.com/weiwei99/ats/lib/conf"
+
 //
 type Span struct {
-	Blocks          int64    `json:"blocks"`
-	Offset          int64    `json:"offset"`
-	HWSectorSize    uint32   `json:"hw_sector_size"`
-	Alignment       uint32   `json:"alignment"`
-	Path            string   `json:"path"`
-	DiskId          [16]byte //
-	ForcedVolumeNum int      `json:"forced_volume_num"`
+	Blocks          int64              `json:"blocks"`
+	Offset          int64              `json:"offset"`
+	HWSectorSize    uint32             `json:"hw_sector_size"`
+	Alignment       uint32             `json:"alignment"`
+	Path            string             `json:"path"`
+	DiskId          [16]byte           //
+	ForcedVolumeNum int                `json:"forced_volume_num"`
+	StorageConf     conf.StorageConfig `json:"-"`
 }
 
-func NewSpan(path string) (*Span, error) {
+func NewSpan(conf conf.StorageConfig) (*Span, error) {
 	sp := &Span{
 		ForcedVolumeNum: -1,
 		HWSectorSize:    256,
-		Path:            path,
+		Path:            conf.Path,
+		StorageConf:     conf,
 	}
 	// 填充BLOCKS等信息
 	return sp, nil

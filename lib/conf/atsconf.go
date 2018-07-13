@@ -8,7 +8,7 @@ import (
 type ATSConfig struct {
 	Path                 string
 	MinAverageObjectSize int
-	Storages             []string
+	Storages             []StorageConfig
 	RemapConfigPath      string
 	ConfigVolumes        *ConfigVolumes
 }
@@ -16,7 +16,7 @@ type ATSConfig struct {
 func NewAtsConfig(path string) (*ATSConfig, error) {
 
 	ac := &ATSConfig{
-		Storages: []string{},
+		Storages: []StorageConfig{},
 		Path:     path,
 	}
 	ac.Path = strings.TrimSuffix(ac.Path, "/")
@@ -57,7 +57,7 @@ func (ac *ATSConfig) Dump() string {
 	ret = fmt.Sprintf("%s", "----Current ATS config----\n")
 	ret += "Disk Info: \n"
 	for i, s := range ac.Storages {
-		ret += fmt.Sprintf("\tID:%d:\t%s\n", i, s)
+		ret += fmt.Sprintf("\tID:%d:\t%v\n", i, s)
 	}
 	ret += fmt.Sprintf("MinAverageObjectSize: %d\n", ac.MinAverageObjectSize)
 	return ret

@@ -47,7 +47,7 @@ func (cp *CacheProcesser) StartInternal(flag int) error {
 	//
 	for _, v := range cp.Store.Spans {
 		// 根据span配置生成cachedisk对象
-		cd, err := NewCacheDisk(v.Path, cp.Store.Config) // 需要路径和ats的配置
+		cd, err := NewCacheDisk(v.StorageConf, cp.Store.Config) // 需要路径和ats的配置
 		if err != nil {
 			return err
 		}

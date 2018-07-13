@@ -3,7 +3,6 @@ package cache
 import (
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"github.com/golang/glog"
 	"github.com/weiwei99/ats/lib/conf"
@@ -90,7 +89,7 @@ func NewVol(config *VolConfig) (*Vol, error) {
 	cache_config_hit_evacuate_percent := 10
 	v.HitEvacuateWindow = int(v.DataBlocks) * cache_config_hit_evacuate_percent / 100
 
-	v.HashText = fmt.Sprintf("%s %d:%d", "/dev/sdb", v.Skip, v.Config.VolInfo.Len)
+	v.HashText = fmt.Sprintf("%s %d:%d", "KKKKKKKKKKK", v.Skip, v.Config.VolInfo.Len)
 	glog.Errorf("%s", v.HashText)
 	return v, nil
 }
@@ -335,15 +334,14 @@ func (v *Vol) DirProbe(key []byte) (*Dir, **Dir) {
 	DIR_TAG_WIDTH := 12
 	seg := v.DirSegment(int(s))
 	e := v.DirBucket(int(b), seg)
-	fmt.Printf("dirprobe....<segment %d, bucket: %d>\n", s, b)
-	fmt.Println(hex.EncodeToString(key))
-	estr, _ := json.Marshal(e)
-	fmt.Printf("dir e: %s\n", estr)
+	fmt.Printf("dirprobe..key %s -> <segment %d, bucket: %d>\n", hex.EncodeToString(key), s, b)
+
+	//estr, _ := json.Marshal(e)
+	//fmt.Printf("dir e: %s\n", estr)
 
 	if e.Offset != 0 {
 		for {
 			b := binary.LittleEndian.Uint32(key[8:12]) & ((1 << uint(DIR_TAG_WIDTH)) - 1)
-			fmt.Printf("%s vs %s\n", uint32(e.Tag), b)
 			if uint32(e.Tag) == b {
 				// 检测碰撞
 
@@ -351,15 +349,22 @@ func (v *Vol) DirProbe(key []byte) (*Dir, **Dir) {
 					return e, nil
 				} else {
 					// delete the invalid entry
+					fmt.Println("delete the invalid entry")
+					// todo: 生成新的e
+					// e = delete(xx)
 					continue
 				}
 			} else {
-
+				fmt.Printf("dir_probe_tag: tag mismatch %X vs expected %X or %X\n",
+					uint32(e.Tag), b, binary.LittleEndian.Uint32(key[8:12]))
 			}
-			fmt.Println("try next")
 			e = v.NextDir(e, seg)
+			if e == nil {
+				break
+			}
 		}
 	}
+	fmt.Println("dir_probe_miss")
 	return nil, nil
 }
 

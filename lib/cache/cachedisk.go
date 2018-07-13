@@ -127,24 +127,37 @@ type CacheDisk struct {
 	YYScanDirCount int // 用于扫描dir计数
 }
 
-func NewCacheDisk(path string, atsconf *conf.ATSConfig) (*CacheDisk, error) {
+func NewCacheDisk(sconf conf.StorageConfig, atsconf *conf.ATSConfig) (*CacheDisk, error) {
 	/// 初始化reader
 	dr := &disk.Reader{}
-	err := dr.Open(path)
+	err := dr.Open(sconf.Path)
 	if err != nil {
-		return nil, fmt.Errorf("parse disk %s failed: %s", path, err.Error())
+		return nil, fmt.Errorf("parse disk %s failed: %s", sconf.Path, err.Error())
 	}
 
 	cd := &CacheDisk{
 		Start:        START,
 		Dio:          dr,
-		Path:         path,
+		Path:         sconf.Path,
 		AtsConf:      atsconf,
 		DocLoadMutex: new(sync.RWMutex),
 	}
+	var byteSize int64
+	if sconf.Type == conf.StorageDisk {
+		// 初始化必要的磁盘信息
+		geo, err := GetGeometry(sconf.Path)
+		if err != nil {
+			return nil, err
+		}
+		cd.Geometry = geo
+		byteSize = geo.TotalSZ
+	} else if sconf.Type == conf.StorageFile {
+		byteSize = int64(sconf.Size)
+	} else {
+		return nil, fmt.Errorf("unspport storage type: %d", sconf.Type)
+	}
 
-	// 初始化必要的磁盘信息
-	err = cd.initGeometryInfo()
+	err = cd.initGeometryInfo(byteSize)
 	if err != nil {
 		return nil, fmt.Errorf("init disk geometry info failed: %s", err.Error())
 	}
@@ -216,11 +229,10 @@ func (cd *CacheDisk) CacheDiskHeaderLen() int64 {
 //}
 
 //
-func (cd *CacheDisk) initGeometryInfo() error {
-	cd.Geometry = GetGeometry()
+func (cd *CacheDisk) initGeometryInfo(byteSize int64) error {
 
 	// todo: 此处应该引入span结构体
-	cd.Len = GetGeometry().TotalSZ/STORE_BLOCK_SIZE - STORE_BLOCK_SIZE>>STORE_BLOCK_SHIFT
+	cd.Len = byteSize/STORE_BLOCK_SIZE - STORE_BLOCK_SIZE>>STORE_BLOCK_SHIFT
 	cd.Skip = STORE_BLOCK_SIZE
 
 	return nil
@@ -346,16 +358,17 @@ func (cd *CacheDisk) ExtractDocs(max int) error {
 		if newDoc.Magic != DOC_MAGIC {
 			return fmt.Errorf("doc magic not match")
 		}
+
 		httpinfo, err := cd.ExtractHttpInfoHeader(newDoc)
 		if err != nil {
-			fmt.Println(err)
 			continue
 		}
 
-		if httpinfo != nil && httpinfo.RequestHdr != nil && httpinfo.RequestHdr.HdrHeep != nil {
-			if httpinfo.RequestHdr.HdrHeep.URL != nil {
-				fmt.Printf("%s\n", httpinfo.RequestHdr.HdrHeep.URL)
-			}
+		if httpinfo.RequestHdr.HdrHeep.URL.Path == "cdn-vod-test-2018.ts" {
+			ss, _ := json.Marshal(httpinfo.RequestHdr.HdrHeep)
+			fmt.Println(string(ss))
+			cc, _ := json.Marshal(dir)
+			fmt.Println(string(cc))
 		}
 
 		//dd, _ := json.Marshal(newDoc)
@@ -392,7 +405,10 @@ func (cd *CacheDisk) ExtractHttpInfoHeader(doc *Doc) (*proxy.HTTPCacheAlt, error
 
 	hi := &proxy.HTTPCacheAlt{}
 	hi.YYDiskOffset = startPos
-	hi.LoadFromBuffer(buf)
+	err = hi.LoadFromBuffer(buf)
+	if err != nil {
+		return nil, err
+	}
 
 	if hi.Magic != proxy.CACHE_ALT_MAGIC_MARSHALED {
 		return nil, fmt.Errorf("not http info block")

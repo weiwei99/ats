@@ -10,6 +10,9 @@ import (
 	"github.com/golang/glog"
 	"github.com/weiwei99/ats/lib/conf"
 	"github.com/weiwei99/ats/lib/disk"
+	"os"
+	"syscall"
+	"unsafe"
 )
 
 type Store struct {
@@ -18,32 +21,76 @@ type Store struct {
 	Config *conf.ATSConfig `json:"-"`
 }
 
+const (
+	BLKBSZGET    = 0x80081270
+	BLKBSZSET    = 0x40081271
+	BLKFLSBUF    = 0x1261
+	BLKFRAGET    = 0x1265
+	BLKFRASET    = 0x1264
+	BLKGETSIZE   = 0x1260
+	BLKGETSIZE64 = 0x80081272
+	BLKPBSZGET   = 0x127b
+	BLKRAGET     = 0x1263
+	BLKRASET     = 0x1262
+	BLKROGET     = 0x125e
+	BLKROSET     = 0x125d
+	BLKRRPART    = 0x125f
+	BLKSECTGET   = 0x1267
+	BLKSECTSET   = 0x1266
+	BLKSSZGET    = 0x1268
+)
+
 //
-func GetGeometry() *disk.Geometry {
+func GetGeometry(path string) (*disk.Geometry, error) {
 
-	geos := make([]*disk.Geometry, 0)
-
-	BigGeo := &disk.Geometry{
-		TotalSZ: 6001175126016,
-		BlockSZ: 11721045168,
-		AlignSZ: 0,
+	dk, err := os.Open(path)
+	if err != nil {
+		return nil, err
 	}
-	geos = append(geos, BigGeo)
+	defer dk.Close()
 
-	SmallGeo := &disk.Geometry{
-		TotalSZ: 2147483648,
-		BlockSZ: 4194304,
-		AlignSZ: 0,
-	}
-	geos = append(geos, SmallGeo)
-	G5Geo := &disk.Geometry{
-		TotalSZ: 5368709120,
-		BlockSZ: 10485760,
-		AlignSZ: 0,
-	}
-	geos = append(geos, G5Geo)
+	ret := disk.Geometry{}
 
-	return geos[1]
+	// BLKGETSIZE64 gets the block device size in bytes.
+	var blksize64 uint64
+	if err := ioctl(dk.Fd(), BLKGETSIZE64, uintptr(unsafe.Pointer(&blksize64))); err != nil {
+		return nil, err
+	}
+	ret.TotalSZ = int64(blksize64)
+
+	// BLKSSZGET gets the logical block size in bytes.
+	var blksize uint64
+	if err := ioctl(dk.Fd(), BLKSSZGET, uintptr(unsafe.Pointer(&blksize))); err != nil {
+		return nil, err
+	}
+	ret.BlockSZ = int64(blksize)
+
+	if ret.TotalSZ == 0 || ret.BlockSZ == 0 {
+		return nil, fmt.Errorf("can not get total size or block size")
+	}
+
+	//geos := make([]*disk.Geometry, 0)
+	//BigGeo := &disk.Geometry{
+	//	TotalSZ: 6001175126016,
+	//	BlockSZ: 11721045168,
+	//	AlignSZ: 0,
+	//}
+	//geos = append(geos, BigGeo)
+	//
+	//SmallGeo := &disk.Geometry{
+	//	TotalSZ: 2147483648,
+	//	BlockSZ: 4194304,
+	//	AlignSZ: 0,
+	//}
+	//geos = append(geos, SmallGeo)
+	//G5Geo := &disk.Geometry{
+	//	TotalSZ: 5368709120,
+	//	BlockSZ: 10485760,
+	//	AlignSZ: 0,
+	//}
+	//geos = append(geos, G5Geo)
+
+	return &ret, nil
 }
 
 //
@@ -78,4 +125,12 @@ func (store *Store) TotalBlocks() int {
 		t += s.TotalBlocks()
 	}
 	return t
+}
+
+func ioctl(fd uintptr, request, argp uintptr) (err error) {
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, fd, request, argp)
+	if errno != 0 {
+		err = errno
+	}
+	return os.NewSyscallError("ioctl", err)
 }
