@@ -76,7 +76,7 @@ var DumpDiskCmd = &ishell.Cmd{
 			fmt.Println("use conf command first")
 			return
 		}
-		diskCount := len(GATSClient.CacheParser.CacheDisks)
+		diskCount := len(GATSClient.CacheParser.Processor.CacheDisks)
 		if diskCount == 0 {
 			fmt.Println("没有找到缓存盘，检查ats配置文件")
 			return
@@ -92,7 +92,7 @@ var DumpDiskCmd = &ishell.Cmd{
 			return
 		}
 
-		hd, err := json.Marshal(GATSClient.CacheParser.CacheDisks[n].Header)
+		hd, err := json.Marshal(GATSClient.CacheParser.Processor.CacheDisks[n].Header)
 		if err != nil {
 			fmt.Println(err.Error())
 			return
@@ -131,7 +131,7 @@ var ExtractDocsCmd = &ishell.Cmd{
 		}
 		fmt.Println(c.Args)
 
-		for _, v := range GATSClient.CacheParser.CacheDisks {
+		for _, v := range GATSClient.CacheParser.Processor.CacheDisks {
 			go v.ExtractDocs(docNum)
 		}
 
@@ -140,7 +140,7 @@ var ExtractDocsCmd = &ishell.Cmd{
 		start := time.Now()
 		var ready, total int
 		for {
-			for _, v := range GATSClient.CacheParser.CacheDisks {
+			for _, v := range GATSClient.CacheParser.Processor.CacheDisks {
 				dirReady, dirTotal := v.LoadReadyDirCount()
 				ready += dirReady
 				total += dirTotal
@@ -190,7 +190,7 @@ var FindObjectCmd = &ishell.Cmd{
 		}
 
 		reurlString := GATSClient.RemapService.Remap(c.Args[0])
-		doc, err := GATSClient.CacheParser.CacheDisks[0].FindURL(reurlString)
+		doc, err := GATSClient.CacheParser.Processor.CacheDisks[0].FindURL(reurlString)
 		if err != nil {
 			fmt.Printf("find failed: %s\n", err)
 		}
@@ -207,7 +207,7 @@ var StatDIOCmd = &ishell.Cmd{
 			fmt.Println("use set_conf_dir command first")
 			return
 		}
-		for _, v := range GATSClient.CacheParser.CacheDisks {
+		for _, v := range GATSClient.CacheParser.Processor.CacheDisks {
 			fmt.Println(v.Dio.DumpStat())
 			fmt.Println("-----------------------")
 		}

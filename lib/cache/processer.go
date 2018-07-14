@@ -2,7 +2,9 @@ package cache
 
 import (
 	"fmt"
+	"github.com/golang/glog"
 	"github.com/weiwei99/ats/lib/conf"
+	"path/filepath"
 )
 
 type CacheProcesser struct {
@@ -37,20 +39,35 @@ func (cp *CacheProcesser) Start() error {
 
 //
 func (cp *CacheProcesser) StartInternal(flag int) error {
-
-	// 对应CacheInit
-	err := cp.Store.LoadConfig() // 只是为了根据storage的配置，设置路径
-	if err != nil {
-		return err
-	}
-
 	//
-	for _, v := range cp.Store.Spans {
+	for _, span := range cp.Store.Spans {
+		path := span.Path
+		// 处理目录情况
+		if !span.FilePathName {
+			path = filepath.Join(path, "cache.db")
+		}
+
+		// 生成CacheDisk
+		sectorSize := span.HWSectorSize
+
+		if span.HWSectorSize <= 0 || sectorSize > STORE_BLOCK_SIZE {
+			glog.Infof("resetting hardware sector size from %d to %d", sectorSize, STORE_BLOCK_SIZE)
+			sectorSize = STORE_BLOCK_SIZE
+		}
+
+		skip := START_POS + span.Alignment
+		blocks := span.Blocks - (int64(skip) >> STORE_BLOCK_SHIFT)
+
 		// 根据span配置生成cachedisk对象
-		cd, err := NewCacheDisk(v.StorageConf, cp.Store.Config) // 需要路径和ats的配置
+		cd, err := NewCacheDisk(span, cp.Store.Config) // 需要路径和ats的配置
 		if err != nil {
 			return err
 		}
+		err = cd.Open(path, blocks, int64(skip), int(sectorSize), 0, false)
+		if err != nil {
+			return err
+		}
+
 		// 利用layout分析器，完善cachedisk数据
 		//config := disklayout.Config{}
 		//lo := disklayout.NewLayout(cd, &config)
@@ -58,6 +75,7 @@ func (cp *CacheProcesser) StartInternal(flag int) error {
 		//if err != nil {
 		//		return err
 		//	}
+
 		cp.CacheDisks = append(cp.CacheDisks, cd)
 	}
 	if len(cp.CacheDisks) == 0 {

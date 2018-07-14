@@ -1,30 +1,52 @@
 package diskparser
 
 import (
+	"fmt"
 	"github.com/weiwei99/ats/lib/cache"
 	"github.com/weiwei99/ats/lib/conf"
-	"github.com/weiwei99/ats/lib/disklayout"
 )
 
 type CacheParser struct {
-	Paths      []string
-	CacheDisks []*cache.CacheDisk
-	Conf       *conf.ATSConfig
+	Paths []string
+	//CacheDisks []*cache.CacheDisk
+	Conf      *conf.ATSConfig
+	Store     *cache.Store
+	Processor *cache.CacheProcesser
 }
 
 func NewCacheParser(atsconf *conf.ATSConfig) (*CacheParser, error) {
 	cp := &CacheParser{
-		CacheDisks: make([]*cache.CacheDisk, 0),
+	//CacheDisks: make([]*cache.CacheDisk, 0),
 	}
-	//test := []string{"/export/servers/trafficserver/cache/cache.db"}
-	for _, v := range atsconf.Storages {
-		//for _, v := range test {
-		cdisk, err := cache.NewCacheDisk(v, atsconf)
-		if err != nil {
-			return nil, err
-		}
-		cp.CacheDisks = append(cp.CacheDisks, cdisk)
+
+	processor, err := cache.NewCacheProcesser(atsconf)
+	if err != nil {
+		return nil, err
 	}
+	err = processor.Start()
+	if err != nil {
+		return nil, err
+	}
+
+	cp.Processor = processor
+
+	//// 根据storage.config文件，加载生成span对象
+	//store, err := cache.NewStore(atsconf)
+	//if err != nil {
+	//	return nil, err
+	//}
+	//cp.Store = store
+	//
+	////test := []string{"/export/servers/trafficserver/cache/cache.db"}
+	//for _, span := range cp.Store.Spans {
+	//
+	//	//for _, v := range test {
+	//	cdisk, err := cache.NewCacheDisk(span, atsconf)
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//	cp.CacheDisks = append(cp.CacheDisks, cdisk)
+	//}
 
 	return cp, nil
 }
@@ -35,12 +57,25 @@ func (cparser *CacheParser) ParseMain(path string) error {
 
 func (cparser *CacheParser) MainParse() error {
 	// 分析Cache结构
-	for _, v := range cparser.CacheDisks {
-		config := disklayout.Config{}
-		lo := disklayout.NewLayout(v, &config)
-		err := lo.ParseLevel1()
+	for _, cd := range cparser.Processor.CacheDisks {
+		//config := disklayout.Config{}
+		//lo := disklayout.NewLayout(cd, &config)
+		//err := lo.ParseLevel1()
+		//if err != nil {
+		//	return err
+		//}
+		err := cd.OpenStart()
 		if err != nil {
 			return err
+		}
+		for i := 0; i < int(cd.Header.NumVolumes); i++ {
+			vol, err := cache.NewVolFromDisk(cd, cd.Header.VolInfos[i])
+			if err != nil {
+				fmt.Println(err)
+				return err
+			}
+			// 一个cd里面，应该有多个vol吧？？？
+			cd.YYVol = vol
 		}
 	}
 	// 创建CacheVol,等价于cplist_xxx

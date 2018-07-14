@@ -9,6 +9,7 @@ package cache
 import (
 	"encoding/binary"
 	//"encoding/hex"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/golang/glog"
@@ -123,58 +124,93 @@ type CacheDisk struct {
 	Dio                 *disk.Reader
 	AtsConf             *conf.ATSConfig
 	DocLoadMutex        *sync.RWMutex
-
-	YYScanDirCount int // 用于扫描dir计数
+	RefSpan             *Span
+	YYScanDirCount      int // 用于扫描dir计数
 }
 
-func NewCacheDisk(sconf conf.StorageConfig, atsconf *conf.ATSConfig) (*CacheDisk, error) {
-	/// 初始化reader
-	dr := &disk.Reader{}
-	err := dr.Open(sconf.Path)
-	if err != nil {
-		return nil, fmt.Errorf("parse disk %s failed: %s", sconf.Path, err.Error())
-	}
-
+func NewCacheDisk(span *Span, atsconf *conf.ATSConfig) (*CacheDisk, error) {
 	cd := &CacheDisk{
 		Start:        START,
-		Dio:          dr,
-		Path:         sconf.Path,
+		Dio:          nil,
+		Path:         span.StorageConf.Path,
 		AtsConf:      atsconf,
 		DocLoadMutex: new(sync.RWMutex),
+		RefSpan:      span,
 	}
-	var byteSize int64
-	if sconf.Type == conf.StorageDisk {
-		// 初始化必要的磁盘信息
-		geo, err := GetGeometry(sconf.Path)
-		if err != nil {
-			return nil, err
+
+	//var byteSize int64
+	//if span.StorageConf.Type == conf.StorageDisk {
+	//	// 初始化必要的磁盘信息
+	//	geo, err := GetGeometry(span.StorageConf.Path)
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//	cd.Geometry = geo
+	//	byteSize = geo.TotalSZ
+	//} else if span.StorageConf.Type == conf.StorageFile {
+	//	byteSize = int64(span.StorageConf.Size)
+	//} else {
+	//	return nil, fmt.Errorf("unspport storage type: %d", span.StorageConf.Type)
+	//}
+	//
+	//err = cd.initGeometryInfo(byteSize)
+	//if err != nil {
+	//	return nil, fmt.Errorf("init disk geometry info failed: %s", err.Error())
+	//}
+	//
+	//// 计算磁盘头长度，需要注意DiskVolBlock的个数
+	//diskVolBlockSpaceCnt := 1
+	//l := (cd.Len * STORE_BLOCK_SIZE) - (cd.Start - cd.Skip)
+	//
+	//if l >= MIN_VOL_SIZE {
+	//	cd.HeaderLen = DiskHeaderLen + (l/MIN_VOL_SIZE-1)*DiskVolBlockLen
+	//	diskVolBlockSpaceCnt += int(l/MIN_VOL_SIZE - 1)
+	//} else {
+	//	cd.HeaderLen = DiskHeaderLen
+	//}
+	//cd.Start = cd.Skip + cd.HeaderLen
+	//
+	//// 初始化变量
+	//cd.Header = &DiskHeader{
+	//	VolInfos: make([]*DiskVolBlock, diskVolBlockSpaceCnt),
+	//}
+	//for i := 0; i < diskVolBlockSpaceCnt; i++ {
+	//	cd.Header.VolInfos[i] = &DiskVolBlock{}
+	//}
+
+	return cd, nil
+}
+
+// 类似于 NewCacheDisk
+func (cd *CacheDisk) Open(path string, blocks int64, askip int64, ahwSectorSize int, fildes int, clear bool) error {
+
+	cd.HWSectorSize = ahwSectorSize
+	cd.Path = path
+	cd.Fd = fildes
+	cd.Skip = askip
+	cd.Start = cd.Skip
+	/* we can't use fractions of store blocks. */
+	cd.Len = blocks
+
+	// determine header size and hence start point by successive approximation
+	var l int64
+	for i := 0; i < 3; i++ {
+		l = (cd.Len * STORE_BLOCK_SIZE) - (cd.Start - cd.Skip)
+		if l >= MIN_VOL_SIZE {
+			cd.HeaderLen = DiskHeaderLen + (l/MIN_VOL_SIZE-1)*DiskVolBlockLen
+		} else {
+			cd.HeaderLen = DiskHeaderLen
 		}
-		cd.Geometry = geo
-		byteSize = geo.TotalSZ
-	} else if sconf.Type == conf.StorageFile {
-		byteSize = int64(sconf.Size)
-	} else {
-		return nil, fmt.Errorf("unspport storage type: %d", sconf.Type)
+		cd.Start = cd.Skip + cd.HeaderLen
 	}
 
-	err = cd.initGeometryInfo(byteSize)
-	if err != nil {
-		return nil, fmt.Errorf("init disk geometry info failed: %s", err.Error())
-	}
-
-	// 计算磁盘头长度，需要注意DiskVolBlock的个数
-	diskVolBlockSpaceCnt := 1
-	l := (cd.Len * STORE_BLOCK_SIZE) - (cd.Start - cd.Skip)
-
-	if l >= MIN_VOL_SIZE {
-		cd.HeaderLen = DiskHeaderLen + (l/MIN_VOL_SIZE-1)*DiskVolBlockLen
-		diskVolBlockSpaceCnt += int(l/MIN_VOL_SIZE - 1)
-	} else {
-		cd.HeaderLen = DiskHeaderLen
-	}
+	//header_len := ROUND_TO_STORE_BLOCK(header_len);
+	//headerLen := cd.HeaderLen
 	cd.Start = cd.Skip + cd.HeaderLen
+	//num_usable_blocks = (off_t(len * STORE_BLOCK_SIZE) - (start - askip)) >> STORE_BLOCK_SHIFT;
+	cd.NumUsableBlocks = ((cd.Len * STORE_BLOCK_SIZE) - (cd.Start - askip)) >> STORE_BLOCK_SHIFT
 
-	// 初始化变量
+	diskVolBlockSpaceCnt := int(l/MIN_VOL_SIZE + 1)
 	cd.Header = &DiskHeader{
 		VolInfos: make([]*DiskVolBlock, diskVolBlockSpaceCnt),
 	}
@@ -182,13 +218,124 @@ func NewCacheDisk(sconf conf.StorageConfig, atsconf *conf.ATSConfig) (*CacheDisk
 		cd.Header.VolInfos[i] = &DiskVolBlock{}
 	}
 
-	return cd, nil
+	/// 初始化reader
+	dr := &disk.Reader{}
+	err := dr.Open(cd.Path)
+	if err != nil {
+		return fmt.Errorf("open disk [%s] failed: %s", cd.Path, err.Error())
+	}
+	cd.Dio = dr
+
+	return nil
 }
 
-// 类似于 NewCacheDisk
-func (cd *CacheDisk) Open(path string, blocks int, askip int, ahw_sector_size int, fildes int, clear bool) int {
+func (cd *CacheDisk) OpenStart() error {
+	// 加载基本信息
+	buffer, err := cd.Dio.Read(cd.Skip, cd.HeaderLen)
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
 
-	return 0
+	err = loadDiskHeaderFromBytes(buffer, cd.Header)
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+
+	// 预存数据
+	if cd.DebugLoad {
+		cd.PsRawDiskHeaderData = make([]byte, DiskHeaderLen)
+		copy(cd.PsRawDiskHeaderData, buffer)
+	}
+	cd.PsDiskOffsetStart = int64(cd.Skip)
+	cd.PsDiskOffsetEnd = int64(cd.Skip + DiskHeaderLen)
+	return nil
+}
+
+// DiskHeader加载
+func loadDiskHeaderFromBytes(buffer []byte, header *DiskHeader) error {
+	curPos := 0
+	header.Magic = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	if header.Magic != DISK_HEADER_MAGIC {
+		return fmt.Errorf("disk header magic not match")
+	}
+	glog.V(10).Infof(
+		"CacheDisk - DiskHeader - Magic <Offset %d>: \n %s\n",
+		curPos, hex.Dump(buffer[curPos:curPos+4]))
+	curPos += 4
+
+	header.NumVolumes = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	glog.V(10).Infof(
+		"CacheDisk - DiskHeader - NumVolume <Offset %d>: \n %s\n",
+		curPos, hex.Dump(buffer[curPos:curPos+4]))
+	curPos += 4
+
+	header.NumFree = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	glog.V(10).Infof(
+		"CacheDisk - DiskHeader - NumFree <Offset %d>: \n %s\n",
+		curPos, hex.Dump(buffer[curPos:curPos+4]))
+	curPos += 4
+
+	header.NumUsed = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	glog.V(10).Infof(
+		"CacheDisk - DiskHeader - NumUsed <Offset %d>: \n %s\n",
+		curPos, hex.Dump(buffer[curPos:curPos+4]))
+	curPos += 4
+
+	header.NumDiskvolBlks = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	glog.V(10).Infof(
+		"CacheDisk - DiskHeader - NumDiskVolBlocks <Offset %d>: \n %s\n",
+		curPos, hex.Dump(buffer[curPos:curPos+4]))
+	curPos += 4
+
+	// 因为C语言对齐
+	curPos += 4
+	header.NumBlocks = binary.LittleEndian.Uint64(buffer[curPos : curPos+8])
+	glog.V(10).Infof(
+		"CacheDisk - DiskHeader - NumBlocks <Offset %d>: \n %s\n",
+		curPos, hex.Dump(buffer[curPos:curPos+8]))
+	curPos += 8
+	//uint64_t delta_3_2 = skip - (skip >> STORE_BLOCK_SHIFT);
+
+	// 对齐
+	//curPos += 2
+	if len(header.VolInfos) < int(header.NumVolumes) {
+		return fmt.Errorf("vol info space not enough")
+	}
+
+	for i := 0; i < int(header.NumVolumes); i++ {
+		header.VolInfos[i].Offset = binary.LittleEndian.Uint64(buffer[curPos : curPos+8])
+		glog.V(10).Infof(
+			"CacheDisk - DiskHeader - VolInfo - Offset <Offset %d>: \n %s\n",
+			curPos, hex.Dump(buffer[curPos:curPos+8]))
+		curPos += 8
+
+		header.VolInfos[i].Len = binary.LittleEndian.Uint64(buffer[curPos : curPos+8])
+		glog.V(10).Infof(
+			"CacheDisk - DiskHeader - VolInfo - Len <Offset %d>: \n %s\n",
+			curPos, hex.Dump(buffer[curPos:curPos+8]))
+		curPos += 8
+
+		header.VolInfos[i].Number = int(binary.LittleEndian.Uint32(buffer[curPos : curPos+4]))
+		glog.V(10).Infof(
+			"CacheDisk - DiskHeader - VolInfo - Number <Offset %d>: \n %s\n",
+			curPos, hex.Dump(buffer[curPos:curPos+4]))
+		curPos += 4
+
+		// binary.LittleEndian.Uint16
+
+		bytesValue := binary.LittleEndian.Uint16(buffer[curPos : curPos+2])
+		glog.V(10).Infof(
+			"CacheDisk - DiskHeader - VolInfo - Type[0-3] & Free[4-4] <Offset %d>: \n %s\n",
+			curPos, hex.Dump(buffer[curPos:curPos+2]))
+		header.VolInfos[i].Type = uint8(bytesValue & 0x0007)
+		header.VolInfos[i].Free = uint8(bytesValue & 0x0008)
+
+		curPos += 4
+	}
+
+	return nil
 }
 
 // 创建磁盘vol
@@ -229,14 +376,14 @@ func (cd *CacheDisk) CacheDiskHeaderLen() int64 {
 //}
 
 //
-func (cd *CacheDisk) initGeometryInfo(byteSize int64) error {
-
-	// todo: 此处应该引入span结构体
-	cd.Len = byteSize/STORE_BLOCK_SIZE - STORE_BLOCK_SIZE>>STORE_BLOCK_SHIFT
-	cd.Skip = STORE_BLOCK_SIZE
-
-	return nil
-}
+//func (cd *CacheDisk) initGeometryInfo(byteSize int64) error {
+//
+//	// todo: 此处应该引入span结构体
+//	cd.Len = byteSize/STORE_BLOCK_SIZE - STORE_BLOCK_SIZE>>STORE_BLOCK_SHIFT
+//	cd.Skip = STORE_BLOCK_SIZE
+//
+//	return nil
+//}
 
 const CacheFileSize = 268435456
 
@@ -335,7 +482,7 @@ func (cd *CacheDisk) ExtractDocs(max int) error {
 	if max < 1 || max >= len(v.YYFullDir) {
 		max = len(v.YYFullDir)
 	}
-	//fmt.Printf("total FullDir : %d, need parse: %d\n", len(v.YYFullDir), max)
+	fmt.Printf("total FullDir : %d, need parse: %d\n", len(v.YYFullDir), max)
 	for i, dir := range v.YYFullDir {
 		//cc, _ := json.Marshal(dir)
 		//fmt.Printf("dir %d: %s\n", i, string(cc))

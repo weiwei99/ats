@@ -3,9 +3,11 @@ package cache
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"github.com/golang/glog"
 	"github.com/weiwei99/ats/lib/conf"
+	"time"
 )
 
 const (
@@ -69,7 +71,8 @@ type Vol struct {
 	YYFullDir  []*Dir `json:"-"`
 	YYStaleDir []*Dir `json:"-"`
 
-	Content []*Doc `json:"-"`
+	Content   []*Doc     `json:"-"`
+	CacheDisk *CacheDisk `json:"-"`
 }
 
 //
@@ -149,9 +152,9 @@ func (v *Vol) allocDir() {
 	}
 }
 
-func (v *Vol) DirCheck(afix bool) int {
+func (v *Vol) DirCheck(afix bool) error {
 	HIST_DEPTH := 8
-	hist := make([]int, HIST_DEPTH)
+	hist := make([]int, HIST_DEPTH+1)
 	shist := make([]int, v.Segments)
 
 	v.YYStaleDir = make([]*Dir, 0)
@@ -191,10 +194,10 @@ func (v *Vol) DirCheck(afix bool) int {
 		free += v.DirFreelistLength(s)
 	}
 	//fmt.Printf(" Directory for [%s %d:%d]\n", v.Disk.Path, v.Disk.Header.VolInfo.Offset, v.Disk.Header.VolInfo.Len)
-	fmt.Printf(" Bytes: [%d]\n", v.Buckets*int64(v.Segments)*DIR_DEPTH*SIZEOF_DIR)
+	fmt.Printf(" Bytes of Dir: [%d]\n", v.Buckets*int64(v.Segments)*DIR_DEPTH*SIZEOF_DIR)
 	fmt.Printf(" Segments: %d\n", int64(v.Segments))
 	fmt.Printf(" Buckets %d\n", v.Buckets)
-	fmt.Printf(" Entries: %d\n", v.Buckets*int64(v.Segments)*DIR_DEPTH)
+	fmt.Printf(" Total Entries: %d\n", v.Buckets*int64(v.Segments)*DIR_DEPTH)
 	fmt.Printf(" Full: %d\n", full)
 	fmt.Printf(" Empty: %d\n", empty)
 	fmt.Printf(" Stale: %d\n", stale)
@@ -223,7 +226,7 @@ func (v *Vol) DirCheck(afix bool) int {
 			fmt.Printf("\n")
 		}
 	}
-	return 0
+	return nil
 }
 
 func (v *Vol) CheckDir() bool {
@@ -370,4 +373,240 @@ func (v *Vol) DirProbe(key []byte) (*Dir, **Dir) {
 
 func (v *Vol) DirBucket(b int, s *Dir) *Dir {
 	return v.Dir[s.Index.Segment][b][0]
+}
+
+func NewVolFromDisk(cd *CacheDisk, block *DiskVolBlock) (*Vol, error) {
+	begin := time.Now()
+
+	volConfig := &VolConfig{
+		MinAverageObjectSize: cd.AtsConf.MinAverageObjectSize,
+		VolInfo:              block,
+	}
+	vol, err := NewVol(volConfig)
+	if err != nil {
+		return nil, fmt.Errorf("create vol failed: %s", err.Error())
+	}
+	vol.CacheDisk = cd
+
+	// 分析headers（包含header, footer)
+	err = vol.loadVolHeaders()
+	if err != nil {
+		return nil, fmt.Errorf("vol header read failed: %s", err.Error())
+	}
+
+	// 分析freelist
+	vol.Header.FreeList = make([]uint16, vol.Segments)
+	// Freelist在 80-72的位置
+	freelistBufPos := vol.Header.AnalyseDiskOffset + (SIZEOF_VolHeaderFooter - 8)
+	freelistBuf, err := cd.Dio.Read(freelistBufPos, int64(vol.Segments)*2)
+	for i := 0; i < vol.Segments; i++ {
+		vol.Header.FreeList[i] = binary.LittleEndian.Uint16(freelistBuf[i*2 : i*2+2])
+	}
+	hstr, err := json.Marshal(vol.Header)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("VolHeaderFooter: \n %s\n", hstr)
+
+	// 加载DIR结构
+	err = vol.loadDirs()
+	if err != nil {
+		return nil, err
+	}
+
+	// 分析DIR使用情况
+	err = vol.DirCheck(false)
+	if err != nil {
+		return nil, fmt.Errorf("check dir failed: %s", err.Error())
+	}
+	volStr, _ := json.Marshal(vol)
+	fmt.Println(string(volStr))
+	fmt.Printf("cost %f secs\n", time.Since(begin).Seconds())
+	return vol, nil
+}
+
+// 分析vol的头信息，注意，一共存在4套
+func (vol *Vol) loadVolHeaders() error {
+
+	//
+	footerLen := RoundToStoreBlock(SIZEOF_VolHeaderFooter)
+	fmt.Printf("footerlen: %d, dir len: %d\n", footerLen, vol.DirLen())
+	footerOffset := vol.DirLen() - footerLen
+
+	hfBufferLen := int64(RoundToStoreBlock(SIZEOF_VolHeaderFooter))
+	//hfBuffer := make([]byte, hfBufferLen)
+
+	// VolHeaderFooter存储顺序是： AHeader, AFooter, BHeader, BFooter
+	ret := make([]*VolHeaderFooter, 4)
+	offsets := []int64{
+		vol.Skip,                                             // aHeadPos
+		vol.Skip + int64(footerOffset),                       // aFootPos
+		vol.Skip + int64(vol.DirLen()),                       // bHeadPos
+		vol.Skip + int64(vol.DirLen()) + int64(footerOffset), // bFootPos
+	}
+
+	for idx, offset := range offsets {
+		hfBuffer, err := vol.CacheDisk.Dio.Read(offset, hfBufferLen)
+		if err != nil {
+			return fmt.Errorf("seek to cache dis header failed: %s", err.Error())
+		}
+		vhf, err := newVolHeaderFooterFromBytes(hfBuffer)
+		if err != nil {
+			return fmt.Errorf("head[%d]: %d, info: %s", idx, offset, err.Error())
+		}
+		vhf.AnalyseDiskOffset = offset
+		ret[idx] = vhf
+	}
+
+	var isFirst = true
+	if ret[0].SyncSerial == ret[1].SyncSerial &&
+		(ret[0].SyncSerial >= ret[2].SyncSerial || ret[2].SyncSerial != ret[3].SyncSerial) {
+
+		vol.Header = ret[0]
+		vol.Footer = ret[1]
+	} else if ret[2].SyncSerial == ret[3].SyncSerial {
+		vol.Header = ret[2]
+		vol.Footer = ret[3]
+		isFirst = false
+	}
+
+	if vol.Header.Magic != VOL_MAGIC || vol.Footer.Magic != VOL_MAGIC {
+		return fmt.Errorf(
+			"head or footer magic not match %s, used first head: %s head pos: %d, foot pos: %d",
+			VOL_MAGIC, isFirst, vol.Header.AnalyseDiskOffset, vol.Footer.AnalyseDiskOffset)
+	}
+	vol.ContentStartPos = ret[0].AnalyseDiskOffset + int64(2*vol.DirLen())
+	return nil
+}
+
+// 根据buffer创建VolHeaderFooter结构体
+func newVolHeaderFooterFromBytes(buffer []byte) (*VolHeaderFooter, error) {
+
+	vf := VolHeaderFooter{}
+	curPos := 0
+	vf.Magic = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	curPos += 4
+	//if vf.Magic != cache.VOL_MAGIC {
+	//	return nil, fmt.Errorf("vol magic not match")
+	//}
+
+	vf.Version.InkMajor = int16(binary.LittleEndian.Uint16(buffer[curPos : curPos+2]))
+	curPos += 2
+	vf.Version.InkMinor = int16(binary.LittleEndian.Uint16(buffer[curPos : curPos+2]))
+	curPos += 2
+
+	vf.CreateTime = binary.LittleEndian.Uint64(buffer[curPos : curPos+8])
+	curPos += 8
+
+	vf.WritePos = int64(binary.LittleEndian.Uint64(buffer[curPos : curPos+8]))
+	curPos += 8
+
+	vf.LastWritePos = int64(binary.LittleEndian.Uint64(buffer[curPos : curPos+8]))
+	curPos += 8
+	vf.AggPos = int64(binary.LittleEndian.Uint64(buffer[curPos : curPos+8]))
+	curPos += 8
+	vf.Generation = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	curPos += 4
+	vf.Phase = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	curPos += 4
+	vf.Cycle = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	curPos += 4
+	vf.SyncSerial = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	curPos += 4
+	vf.WriteSerial = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	curPos += 4
+	vf.Dirty = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	curPos += 4
+	vf.SectorSize = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	curPos += 4
+	vf.Unused = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	curPos += 4
+	//vf.FreeList = binary.LittleEndian.Uint16(buffer[curPos : curPos+2])
+
+	return &vf, nil
+}
+
+func newVolHeaderFooterFromBuffer(buffer []byte) (*VolHeaderFooter, error) {
+	vf := VolHeaderFooter{}
+	curPos := 0
+	vf.Magic = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	curPos += 4
+	//if vf.Magic != cache.VOL_MAGIC {
+	//	return nil, fmt.Errorf("vol magic not match")
+	//}
+
+	vf.Version.InkMajor = int16(binary.LittleEndian.Uint16(buffer[curPos : curPos+2]))
+	curPos += 2
+	vf.Version.InkMinor = int16(binary.LittleEndian.Uint16(buffer[curPos : curPos+2]))
+	curPos += 2
+
+	vf.CreateTime = binary.LittleEndian.Uint64(buffer[curPos : curPos+8])
+	curPos += 8
+
+	vf.WritePos = int64(binary.LittleEndian.Uint64(buffer[curPos : curPos+8]))
+	curPos += 8
+
+	vf.LastWritePos = int64(binary.LittleEndian.Uint64(buffer[curPos : curPos+8]))
+	curPos += 8
+	vf.AggPos = int64(binary.LittleEndian.Uint64(buffer[curPos : curPos+8]))
+	curPos += 8
+	vf.Generation = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	curPos += 4
+	vf.Phase = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	curPos += 4
+	vf.Cycle = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	curPos += 4
+	vf.SyncSerial = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	curPos += 4
+	vf.WriteSerial = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	curPos += 4
+	vf.Dirty = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	curPos += 4
+	vf.SectorSize = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	curPos += 4
+	vf.Unused = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	curPos += 4
+	//vf.FreeList = binary.LittleEndian.Uint16(buffer[curPos : curPos+2])
+
+	return &vf, nil
+}
+
+// 填充dir数据
+func (v *Vol) loadDirs() error {
+	// 读取dir的磁盘信息
+	v.DirPos = v.Header.AnalyseDiskOffset + int64(RoundToStoreBlock(SIZEOF_VolHeaderFooter))
+	buffer, err := v.CacheDisk.Dio.Read(v.DirPos, int64(v.DirEntries()*SIZEOF_DIR))
+	if err != nil {
+		return fmt.Errorf("seek to cache disk header failed: %s", err.Error())
+	}
+
+	// 结构化
+	if len(buffer) != v.DirEntries()*SIZEOF_DIR {
+		return fmt.Errorf("buffer len not much")
+	}
+	for s := 0; s < v.Segments; s++ {
+		sOffset := s * int(v.Buckets) * DIR_DEPTH
+		for b := 0; b < int(v.Buckets); b++ {
+			bOffset := sOffset + b*DIR_DEPTH
+			for d := 0; d < DIR_DEPTH; d++ {
+				offset := (bOffset + d) * SIZEOF_DIR
+				dir, err := NewDirFromBuffer(buffer[offset : offset+SIZEOF_DIR])
+				if err != nil {
+					return fmt.Errorf("wrong dir pos [%d, %d, %d], err: %s", s, b, d, err.Error())
+				}
+				dir.Index.Segment = s
+				dir.Index.Bucket = b
+				dir.Index.Depth = d
+				dir.Index.Offset = v.DirPos + int64(offset)
+				dir.Index.Vol = v
+				v.Dir[s][b][d] = dir
+			}
+		}
+	}
+	return nil
+}
+
+func (v *Vol) Dump() string {
+
+	return ""
 }

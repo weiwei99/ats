@@ -6,7 +6,6 @@ import (
 	"github.com/golang/glog"
 	"io"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -51,17 +50,6 @@ func (ac *ATSConfig) loadStorage() error {
 		ins := StorageConfig{
 			Path: words[0],
 			Type: StorageUnknown,
-		}
-		// 分析路径
-		s, err := os.Stat(ins.Path)
-		if err != nil {
-			continue
-		}
-		if s.IsDir() {
-			ins.Path = filepath.Join(ins.Path, "cache.db")
-			ins.Type = StorageFile
-		} else if strings.HasPrefix(ins.Path, "/dev/") {
-			ins.Type = StorageDisk
 		}
 
 		// 分析大小

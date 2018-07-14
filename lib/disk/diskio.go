@@ -2,6 +2,7 @@ package disk
 
 import (
 	"fmt"
+	"github.com/golang/glog"
 	"os"
 	"syscall"
 	"time"
@@ -17,25 +18,36 @@ type Reader struct {
 	StatIoSpeed      float64  `json:"stat_io_speed"`
 }
 
+// todo: support o_direct
 func (dio *Reader) Open(path string) error {
-	_, err := os.Stat("path")
-	if os.IsNotExist(err) {
-		fd, err := syscall.Open(path, syscall.O_RDONLY, 0777)
-		if err != nil {
-			fmt.Errorf("open raw disk [%s] failed: %s", path, err.Error())
-			return err
-		}
-		dio.Fd = &fd
-		dio.File = nil
-	} else {
-		file, err := os.Open(path)
-		if err != nil {
-			fmt.Errorf("open file :%s failed: %s", path, err.Error())
-			return err
-		}
-		dio.File = file
-		dio.Fd = nil
+	//_, err := os.Stat(path)
+	//if os.IsNotExist(err) {
+	//	fd, err := syscall.Open(path, syscall.O_RDONLY, 0644)
+	//	if err != nil {
+	//		fmt.Errorf("open raw disk [%s] failed: %s", path, err.Error())
+	//		return err
+	//	}
+	//	dio.Fd = &fd
+	//	dio.File = nil
+	//	fmt.Printf("dada\n")
+	//} else {
+	//	file, err := os.Open(path)
+	//	if err != nil {
+	//		fmt.Errorf("open file :%s failed: %s", path, err.Error())
+	//		return err
+	//	}
+	//	dio.File = file
+	//	dio.Fd = nil
+	//	fmt.Printf("file dada\n")
+	//}
+	// no need o_create
+	fd, err := syscall.Open(path, syscall.O_RDONLY, 0644)
+	if err != nil {
+		fmt.Errorf("open raw disk [%s] failed: %s", path, err.Error())
+		return err
 	}
+	dio.Fd = &fd
+	dio.File = nil
 	dio.Path = path
 
 	// 为了防止除以0
@@ -47,7 +59,7 @@ func (dio *Reader) Open(path string) error {
 }
 
 func (dio *Reader) Read(offset, size int64) ([]byte, error) {
-
+	glog.V(10).Infof("------io try read: %d, %d\n", offset, size)
 	ret := make([]byte, size)
 	start := time.Now().UnixNano()
 	if dio.Fd != nil {

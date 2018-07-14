@@ -3,6 +3,11 @@
  */
 package cache
 
+import (
+	"encoding/binary"
+	"encoding/hex"
+)
+
 const (
 	DIR_DEPTH = 4
 )
@@ -72,6 +77,35 @@ func NewDir() *Dir {
 	return d
 }
 
+// 从内存中加载
+func NewDirFromBuffer(buffer []byte) (*Dir, error) {
+	d := NewDir()
+
+	curPos := 0
+	data := binary.LittleEndian.Uint32(buffer[:4])
+
+	//
+	dataHigh := binary.LittleEndian.Uint16(buffer[8:10])
+	d.Offset = uint64(data)&0x00ffffff | (uint64(dataHigh) << 24)
+
+	d.Big = uint8((data >> 24) & 0x03)
+	d.Size = uint8((data >> 26) & 0x3f)
+	curPos += 4
+
+	data = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	d.Tag = uint16(data & 0x00000fff)
+	d.Phase = uint8((data >> 12) & 0x01)
+	d.Head = uint8((data >> 13) & 0x01)
+	d.Pinned = uint8((data >> 14) & 0x01)
+	d.Token = uint8((data >> 15) & 0x01)
+	d.Next = uint16((data >> 16) & 0xffff)
+
+	d.RawByte = make([]byte, len(buffer))
+	copy(d.RawByte, buffer)
+	d.RawByteHex = hex.Dump(d.RawByte)
+	return d, nil
+}
+
 var CacheKey_next_table = [256]uint8{
 	21, 53, 167, 51, 255, 126, 241, 151, 115, 66, 155, 174, 226, 215, 80, 188, 12, 95, 8, 24, 162, 201, 46, 104, 79, 172,
 	39, 68, 56, 144, 142, 217, 101, 62, 14, 108, 120, 90, 61, 47, 132, 199, 110, 166, 83, 125, 57, 65, 19, 130, 148, 116,
@@ -116,4 +150,9 @@ func PrevCacheKey(key []byte) []byte {
 	}
 
 	return ret
+}
+
+func (d *Dir) Dump() string {
+
+	return ""
 }
