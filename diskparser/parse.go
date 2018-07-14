@@ -14,10 +14,9 @@ type CacheParser struct {
 	Processor *cache.CacheProcesser
 }
 
+//
 func NewCacheParser(atsconf *conf.ATSConfig) (*CacheParser, error) {
-	cp := &CacheParser{
-	//CacheDisks: make([]*cache.CacheDisk, 0),
-	}
+	cp := &CacheParser{}
 
 	processor, err := cache.NewCacheProcesser(atsconf)
 	if err != nil {
@@ -27,43 +26,19 @@ func NewCacheParser(atsconf *conf.ATSConfig) (*CacheParser, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	cp.Processor = processor
-
-	//// 根据storage.config文件，加载生成span对象
-	//store, err := cache.NewStore(atsconf)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//cp.Store = store
-	//
-	////test := []string{"/export/servers/trafficserver/cache/cache.db"}
-	//for _, span := range cp.Store.Spans {
-	//
-	//	//for _, v := range test {
-	//	cdisk, err := cache.NewCacheDisk(span, atsconf)
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//	cp.CacheDisks = append(cp.CacheDisks, cdisk)
-	//}
-
 	return cp, nil
 }
 
+//
 func (cparser *CacheParser) ParseMain(path string) error {
 	return nil
 }
 
+//
 func (cparser *CacheParser) MainParse() error {
 	// 分析Cache结构
 	for _, cd := range cparser.Processor.CacheDisks {
-		//config := disklayout.Config{}
-		//lo := disklayout.NewLayout(cd, &config)
-		//err := lo.ParseLevel1()
-		//if err != nil {
-		//	return err
-		//}
 		err := cd.OpenStart()
 		if err != nil {
 			return err

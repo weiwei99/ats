@@ -190,8 +190,8 @@ var FindObjectCmd = &ishell.Cmd{
 		}
 
 		reurlString := GATSClient.RemapService.Remap(c.Args[0])
-		doc, err := GATSClient.CacheParser.Processor.CacheDisks[0].FindURL(reurlString)
-		if err != nil {
+		doc := GATSClient.CacheParser.Processor.FindURL(reurlString)
+		if doc == nil {
 			fmt.Printf("find failed: %s\n", err)
 		}
 		docStr, _ := json.Marshal(doc)

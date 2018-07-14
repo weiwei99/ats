@@ -128,6 +128,7 @@ type CacheDisk struct {
 	YYScanDirCount      int // 用于扫描dir计数
 }
 
+// create cachedisk instance
 func NewCacheDisk(span *Span, atsconf *conf.ATSConfig) (*CacheDisk, error) {
 	cd := &CacheDisk{
 		Start:        START,
@@ -137,47 +138,6 @@ func NewCacheDisk(span *Span, atsconf *conf.ATSConfig) (*CacheDisk, error) {
 		DocLoadMutex: new(sync.RWMutex),
 		RefSpan:      span,
 	}
-
-	//var byteSize int64
-	//if span.StorageConf.Type == conf.StorageDisk {
-	//	// 初始化必要的磁盘信息
-	//	geo, err := GetGeometry(span.StorageConf.Path)
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//	cd.Geometry = geo
-	//	byteSize = geo.TotalSZ
-	//} else if span.StorageConf.Type == conf.StorageFile {
-	//	byteSize = int64(span.StorageConf.Size)
-	//} else {
-	//	return nil, fmt.Errorf("unspport storage type: %d", span.StorageConf.Type)
-	//}
-	//
-	//err = cd.initGeometryInfo(byteSize)
-	//if err != nil {
-	//	return nil, fmt.Errorf("init disk geometry info failed: %s", err.Error())
-	//}
-	//
-	//// 计算磁盘头长度，需要注意DiskVolBlock的个数
-	//diskVolBlockSpaceCnt := 1
-	//l := (cd.Len * STORE_BLOCK_SIZE) - (cd.Start - cd.Skip)
-	//
-	//if l >= MIN_VOL_SIZE {
-	//	cd.HeaderLen = DiskHeaderLen + (l/MIN_VOL_SIZE-1)*DiskVolBlockLen
-	//	diskVolBlockSpaceCnt += int(l/MIN_VOL_SIZE - 1)
-	//} else {
-	//	cd.HeaderLen = DiskHeaderLen
-	//}
-	//cd.Start = cd.Skip + cd.HeaderLen
-	//
-	//// 初始化变量
-	//cd.Header = &DiskHeader{
-	//	VolInfos: make([]*DiskVolBlock, diskVolBlockSpaceCnt),
-	//}
-	//for i := 0; i < diskVolBlockSpaceCnt; i++ {
-	//	cd.Header.VolInfos[i] = &DiskVolBlock{}
-	//}
-
 	return cd, nil
 }
 
@@ -229,6 +189,7 @@ func (cd *CacheDisk) Open(path string, blocks int64, askip int64, ahwSectorSize 
 	return nil
 }
 
+//
 func (cd *CacheDisk) OpenStart() error {
 	// 加载基本信息
 	buffer, err := cd.Dio.Read(cd.Skip, cd.HeaderLen)
@@ -352,40 +313,6 @@ func (cd *CacheDisk) createVolume(volIdx int, volSizeInBlocks int, schemeType in
 func (cd *CacheDisk) CacheDiskHeaderLen() int64 {
 	return DiskHeaderLen
 }
-
-//// 从buffer中加载CacheDisk结构信息
-//func (cd *CacheDisk) load(buffer []byte) error {
-//	if len(buffer) < DiskHeaderLen {
-//		return fmt.Errorf("need %d raw data for parse disk info", DiskHeaderLen)
-//	}
-//
-//	// 预存数据
-//	if cd.DebugLoad {
-//		cd.PsRawDiskHeaderData = make([]byte, DiskHeaderLen)
-//		copy(cd.PsRawDiskHeaderData, buffer)
-//	}
-//
-//	// 分析磁盘头
-//	header, err := cd.loadDiskHeader(buffer[:DiskHeaderLen])
-//	if err != nil {
-//		return err
-//	}
-//	cd.Header = header
-//
-//	return nil
-//}
-
-//
-//func (cd *CacheDisk) initGeometryInfo(byteSize int64) error {
-//
-//	// todo: 此处应该引入span结构体
-//	cd.Len = byteSize/STORE_BLOCK_SIZE - STORE_BLOCK_SIZE>>STORE_BLOCK_SHIFT
-//	cd.Skip = STORE_BLOCK_SIZE
-//
-//	return nil
-//}
-
-const CacheFileSize = 268435456
 
 func (cd *CacheDisk) FindURL(urlStr string) (*Doc, error) {
 	if cd.YYVol == nil {

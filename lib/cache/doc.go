@@ -32,7 +32,7 @@ type Doc struct {
 
 func NewDoc(buffer []byte) (*Doc, error) {
 	d := &Doc{}
-	err := d.LoadFromDisk(buffer)
+	err := d.loadFromBuffer(buffer)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func (d *Doc) Unmarshal() {
 	// 根据doc.len考虑
 }
 
-func (d *Doc) LoadFromDisk(buffer []byte) error {
+func (d *Doc) loadFromBuffer(buffer []byte) error {
 	curPos := 0
 	d.Magic = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
 	curPos += 4

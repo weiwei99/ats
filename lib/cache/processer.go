@@ -83,3 +83,14 @@ func (cp *CacheProcesser) StartInternal(flag int) error {
 	}
 	return nil
 }
+
+func (cp *CacheProcesser) FindURL(url string) *Doc {
+
+	// TODO: 根据其他信息，应该一次定位到url位于哪个cachedisk(其实准确来说，应该是vol)
+	doc, err := cp.CacheDisks[0].FindURL(url)
+	if err != nil {
+		fmt.Printf("find failed: %s\n", err)
+		return nil
+	}
+	return doc
+}
