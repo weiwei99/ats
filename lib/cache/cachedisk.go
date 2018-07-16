@@ -331,12 +331,12 @@ func (cd *CacheDisk) FindURL(urlStr string) (*Doc, error) {
 		return nil, err
 	}
 
-	docStr, _ := json.Marshal(newDoc)
-	fmt.Printf("-------- found: %s\n", docStr)
+	fmt.Printf("-------- found: %s\n", newDoc.Dump())
+	fmt.Printf("00: %s\n", hex.Dump(newDoc.Hdr()))
 
 	if !newDoc.SingleFragment() {
-		nextKey := NextCacheKey(hash)
-
+		nextKey := NextCacheKey(newDoc.Key)
+		fmt.Printf("next key: %s\n", hex.EncodeToString(nextKey))
 		nextDoc, err := cd.FindDoc(nextKey)
 		if err != nil {
 			fmt.Println(err)
@@ -349,24 +349,45 @@ func (cd *CacheDisk) FindURL(urlStr string) (*Doc, error) {
 	return newDoc, nil
 }
 
+//
 func (cd *CacheDisk) FindDoc(key []byte) (*Doc, error) {
-	d1, d2 := cd.YYVol.DirProbe(key)
-	fmt.Printf("result: %s, %s\n", d1, d2)
+	d1, _ := cd.YYVol.DirProbe(key)
 	if d1 == nil {
 		return nil, fmt.Errorf("no dir found!")
 	}
 
+	newDoc, err := cd.LoadHttpObject(d1)
+	if err != nil {
+		return nil, err
+	}
+	return newDoc, nil
+}
+
+func (cd *CacheDisk) LoadHttpObject(dir *Dir) (*Doc, error) {
 	// get doc from dir
-	docPos := int64(d1.Offset-1)*DEFAULT_HW_SECTOR_SIZE + cd.YYVol.ContentStartPos
+	docPos := int64(dir.Offset-1)*DEFAULT_HW_SECTOR_SIZE + cd.YYVol.ContentStartPos
 	buff, err := cd.Dio.Read(docPos, 72)
 	if err != nil {
 		return nil, err
 	}
-	newDoc, err := NewDoc(buff)
+	newDoc, err := NewDocFromBuffer(buff)
 	if err != nil {
 		return nil, fmt.Errorf("parse doc failed: %s", err.Error())
 	}
 	newDoc.YYDiskOffset = docPos
+
+	// 提取头信息
+	_, _ = cd.ExtractHttpInfoHeader(newDoc)
+	//if err != nil {
+	//
+	//	return nil, err
+	//}
+
+	// 提取体信息
+	_ = cd.ExtractHttpBody(newDoc)
+	//if err != nil {
+	//	return nil, err
+	//}
 	return newDoc, nil
 }
 
@@ -385,6 +406,7 @@ func (cd *CacheDisk) ScanHttpObject() {
 	}
 }
 
+//
 func (cd *CacheDisk) LoadReadyDirCount() (int, int) {
 	if cd.YYVol == nil {
 		return 0, 0
@@ -411,39 +433,41 @@ func (cd *CacheDisk) ExtractDocs(max int) error {
 	}
 	fmt.Printf("total FullDir : %d, need parse: %d\n", len(v.YYFullDir), max)
 	for i, dir := range v.YYFullDir {
-		//cc, _ := json.Marshal(dir)
-		//fmt.Printf("dir %d: %s\n", i, string(cc))
-
 		cd.DocLoadMutex.Lock()
 		cd.YYScanDirCount = i + 1
 		cd.DocLoadMutex.Unlock()
 
-		docPos := int64(dir.Offset-1)*DEFAULT_HW_SECTOR_SIZE + v.ContentStartPos
-		buff, err := cd.Dio.Read(docPos, 72)
+		newDoc, err := cd.LoadHttpObject(dir)
 		if err != nil {
 			return err
 		}
-		newDoc, err := NewDoc(buff)
-		if err != nil {
-			return fmt.Errorf("parse doc failed: %s", err.Error())
-		}
-		newDoc.YYDiskOffset = docPos
+		fmt.Printf("doc: %s\n", newDoc.Dump())
+		//docPos := int64(dir.Offset-1)*DEFAULT_HW_SECTOR_SIZE + v.ContentStartPos
+		//buff, err := cd.Dio.Read(docPos, 72)
+		//if err != nil {
+		//	return err
+		//}
+		//newDoc, err := NewDocFromBuffer(buff)
+		//if err != nil {
+		//	return fmt.Errorf("parse doc failed: %s", err.Error())
+		//}
+		//newDoc.YYDiskOffset = docPos
+		//
+		//if newDoc.Magic != DOC_MAGIC {
+		//	return fmt.Errorf("doc magic not match")
+		//}
+		//
+		//_, err = cd.ExtractHttpInfoHeader(newDoc)
+		//if err != nil {
+		//	continue
+		//}
 
-		if newDoc.Magic != DOC_MAGIC {
-			return fmt.Errorf("doc magic not match")
-		}
-
-		httpinfo, err := cd.ExtractHttpInfoHeader(newDoc)
-		if err != nil {
-			continue
-		}
-
-		if httpinfo.RequestHdr.HdrHeep.URL.Path == "cdn-vod-test-2018.ts" {
-			ss, _ := json.Marshal(httpinfo.RequestHdr.HdrHeep)
-			fmt.Println(string(ss))
-			cc, _ := json.Marshal(dir)
-			fmt.Println(string(cc))
-		}
+		//if httpinfo.RequestHdr.HdrHeep.URL.Path == "cdn-vod-test-2018.ts" {
+		//	ss, _ := json.Marshal(httpinfo.RequestHdr.HdrHeep)
+		//	fmt.Println(string(ss))
+		//	cc, _ := json.Marshal(dir)
+		//	fmt.Println(string(cc))
+		//}
 
 		//dd, _ := json.Marshal(newDoc)
 		//fmt.Printf("dir %d: %s\n", i, string(dd))
@@ -488,5 +512,27 @@ func (cd *CacheDisk) ExtractHttpInfoHeader(doc *Doc) (*proxy.HTTPCacheAlt, error
 		return nil, fmt.Errorf("not http info block")
 	}
 
+	//
+	doc.HttpInfoHeader = hi
+	doc.HeaderData = buf
+
 	return hi, nil
+}
+
+//
+func (cd *CacheDisk) ExtractHttpBody(doc *Doc) error {
+
+	dataLen := doc.DataLen()
+
+	startPos := doc.YYDiskOffset + 72 + int64(doc.HLen)
+
+	//fmt.Printf("dir h len: %d\n", d.HLen)
+	buf, err := cd.Dio.Read(startPos, int64(dataLen))
+	if err != nil {
+		return err
+	}
+
+	doc.Data = buf
+
+	return nil
 }

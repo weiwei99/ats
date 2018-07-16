@@ -6,6 +6,8 @@ package cache
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
+	"math"
 )
 
 const (
@@ -42,19 +44,19 @@ type Dir struct {
 	// bits are numbered from lowest in u16 to highest
 	// always index as u16 to avoid byte order issues
 	// PS：此处的Offset是结合了OffsetHigh的和
-	Offset     uint64 `json:"offset"`      //bits 24 // (0,1:0-7) 16M * 512 = 8GB
-	Big        uint8  `json:"big"`         //bits 2
-	Size       uint8  `json:"size"`        //bits 6
-	Tag        uint16 `json:"tag"`         //bits 12
-	Phase      uint8  `json:"phase"`       //bits 1
-	Head       uint8  `json:"head"`        //bits 1
-	Pinned     uint8  `json:"pinned"`      //bits 1
-	Token      uint8  `json:"token"`       //bits 1
-	Next       uint16 `json:"next"`        //bits 16
-	OffsetHigh uint16 `json:"offset_high"` //bits
-	Index      *DirPos
-	RawByte    []byte
-	RawByteHex string
+	Offset     uint64  `json:"offset"`      //bits 24 (0,1:0-7) 16M * 512 = 8GB, Offset of first byte of metadata (volume relative)
+	Big        uint8   `json:"big"`         //bits 2, Size multiplier
+	Size       uint8   `json:"size"`        //bits 6, Size
+	Tag        uint16  `json:"tag"`         //bits 12, Partial key (fast collision check)
+	Phase      uint8   `json:"phase"`       //bits 1, Phase of the Doc (for dir valid check)
+	Head       uint8   `json:"head"`        //bits 1, Flag: first fragment in an object
+	Pinned     uint8   `json:"pinned"`      //bits 1, Flag: document is pinned
+	Token      uint8   `json:"token"`       //bits 1, Flag: Unknown
+	Next       uint16  `json:"next"`        //bits 16, Segment local index of next entry.
+	OffsetHigh uint16  `json:"offset_high"` //bits 16, High order offset bits
+	Index      *DirPos `json:"-"`
+	RawByte    []byte  `json:"-"`
+	RawByteHex string  `json:"-"`
 }
 
 // INTERNAL: do not access these members directly, use the
@@ -135,6 +137,7 @@ func NextCacheKey(key []byte) []byte {
 
 	ret := make([]byte, 16)
 	ret[0] = CacheKey_next_table[key[0]]
+	fmt.Printf("----:   %s,   %s, %s", hex.EncodeToString(key), key[0], ret[0])
 	for i := 1; i < 16; i++ {
 		ret[i] = CacheKey_next_table[(ret[i-1]+key[i])&0xFF]
 	}
@@ -152,7 +155,22 @@ func PrevCacheKey(key []byte) []byte {
 	return ret
 }
 
+//
+/*
+The computation of the approximate size of the fragment is defined as:
+( *size* + 1 ) * 2 ^ ( CACHE_BLOCK_SHIFT + 3 * *big* )
+Where CACHE_BLOCK_SHIFT is the bit width of the size of a basic cache block (9, corresponding to a sector size of 512). Therefore the value with current defines is:
+( *size* + 1 ) * 2 ^ (9 + 3 * *big*)
+*/
 func (d *Dir) Dump() string {
+	if d.Index == nil {
+		return "no more information"
+	}
 
-	return ""
+	ret := fmt.Sprintf("<%d-%d-%d, head: %v, app_size: %f>",
+		d.Index.Segment, d.Index.Bucket, d.Index.Depth,
+		d.Head == 1,
+		float64(d.Size+1)*math.Pow(2, float64(CACHE_BLOCK_SHIFT+3*d.Big)),
+	)
+	return ret
 }

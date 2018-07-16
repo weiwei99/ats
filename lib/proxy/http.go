@@ -14,11 +14,32 @@ const (
 	HTTP_ALT_MARSHAL_SIZE = 248 // 先写死，实际上是：ROUND(sizeof(HTTPCacheAlt), HDR_PTR_SIZE); 且#define ROUND(x, l) (((x) + ((l)-1L)) & ~((l)-1L))
 )
 
+type HTTPInfo struct {
+	M_ALT *HTTPCacheAlt
+}
+
+func (hi *HTTPInfo) RequestGet(hdr *HTTPHdr) {
+
+}
+
+func (hi *HTTPInfo) ResponseGet(hdr *HTTPInfo) {
+
+}
+
 // HTTP信息
 type HTTPCacheAlt struct {
-	Magic       uint32   `json:"magic"`
-	RequestHdr  *HTTPHdr `json:"request_hdr"`
-	ResponseHdr *HTTPHdr `json:"response_hdr"`
+	Magic      uint32    `json:"magic"`
+	ID         int32     `json:"id"`
+	ObjectKey  [4]uint32 `json:"object_key"`
+	ObjectSize [2]uint32 `json:"object_size"`
+
+	RequestHdr           *HTTPHdr `json:"request_hdr"`
+	ResponseHdr          *HTTPHdr `json:"response_hdr"`
+	RequestSentTime      int64    `json:"request_sent_time"`
+	ResponseReceivedTime int64    `json:"response_received_time"`
+	FragOffsetCount      int      `json:"frag_offset_count"`
+	FragOffset           uint64   `json:"-"` // TODO： 指针
+
 	//BeloneDir    *cache.Dir `json:"-"`
 	YYDiskOffset int64 `json:"yy_disk_offset"`
 }
@@ -67,11 +88,25 @@ func (hca *HTTPCacheAlt) LoadFromBuffer(buffer []byte) error {
 		return fmt.Errorf("magic not match")
 	}
 
+	curPos = 4
+	hca.ID = int32(binary.LittleEndian.Uint32(buffer[curPos : curPos+4]))
+
+	curPos = 20
+	hca.ObjectKey[0] = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	hca.ObjectKey[1] = binary.LittleEndian.Uint32(buffer[curPos+4 : curPos+8])
+	hca.ObjectKey[2] = binary.LittleEndian.Uint32(buffer[curPos+8 : curPos+12])
+	hca.ObjectKey[3] = binary.LittleEndian.Uint32(buffer[curPos+12 : curPos+16])
+
+	curPos = 36
+	hca.ObjectSize[0] = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
+	hca.ObjectSize[1] = binary.LittleEndian.Uint32(buffer[curPos+4 : curPos+8])
+
 	// request header process
 	//fmt.Println("------begin parse request info----")
 	requestHeader := &HTTPHdr{}
 
-	requestHeader.YYDiskOffset = hca.YYDiskOffset + 48
+	REQUEST_HDR_OFFSET := 48
+	requestHeader.YYDiskOffset = hca.YYDiskOffset + int64(REQUEST_HDR_OFFSET)
 	curPos = 48
 	requestHeader.HeapPos = int64(binary.LittleEndian.Uint64(buffer[curPos : curPos+8]))
 	// len = 2216
@@ -87,6 +122,7 @@ func (hca *HTTPCacheAlt) LoadFromBuffer(buffer []byte) error {
 	// response header process
 	//fmt.Println("------begin parse reponse info----")
 	responseHeader := &HTTPHdr{}
+
 	responseHeader.YYDiskOffset = hca.YYDiskOffset + 112
 	curPos = 112
 	responseHeader.HeapPos = int64(binary.LittleEndian.Uint64(buffer[curPos : curPos+8]))
@@ -98,6 +134,16 @@ func (hca *HTTPCacheAlt) LoadFromBuffer(buffer []byte) error {
 	respHeap.YYDiskOffset = hca.YYDiskOffset + requestHeader.HeapPos // 248
 	responseHeader.HdrHeep = respHeap
 	hca.ResponseHdr = responseHeader
+
+	//
+	curPos = 176
+	hca.RequestSentTime = int64(binary.LittleEndian.Uint64(buffer[curPos : curPos+8]))
+
+	curPos = 184
+	hca.ResponseReceivedTime = int64(binary.LittleEndian.Uint64(buffer[curPos : curPos+8]))
+
+	curPos = 192
+	hca.FragOffsetCount = int(binary.LittleEndian.Uint32(buffer[curPos : curPos+8]))
 
 	return nil
 }
@@ -175,15 +221,15 @@ func (hhdr *HdrHeapObjHeader) ExtractObjects(buffer []byte) error {
 	tmp2 := binary.LittleEndian.Uint16(buffer[curPos+2 : curPos+4])
 	hhdr.MLength = (uint32(tmp2&0x0f00))<<16 + hhdr.MLength
 
-	//hhdr.MLength = (uint32(tmp2&0x000f))<<16 + hhdr.MLength
+	// hhdr.MLength = (uint32(tmp2&0x000f))<<16 + hhdr.MLength
 
 	hhdr.MObjFlags = uint32(tmp2&0xff00) >> 8
 
 	curPos += 4
 	hhdr.Content = buffer[curPos : curPos+int(hhdr.MLength)]
 
-	//fmt.Printf("begin parse: %d, content len: %d, object flag: %d\n",
-	//	hhdr.MType, hhdr.MLength, hhdr.MObjFlags)
+	// fmt.Printf("begin parse: %d, content len: %d, object flag: %d\n",
+	// hhdr.MType, hhdr.MLength, hhdr.MObjFlags)
 	if hhdr.MType == uint32(HDR_HEAP_OBJ_URL) {
 		err := hhdr.UnmarshalURL(hhdr.Content)
 		if err != nil {
