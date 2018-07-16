@@ -28,26 +28,32 @@ func (hi *HTTPInfo) ResponseGet(hdr *HTTPInfo) {
 
 // HTTP信息
 type HTTPCacheAlt struct {
-	Magic      uint32    `json:"magic"`
-	ID         int32     `json:"id"`
-	ObjectKey  [4]uint32 `json:"object_key"`
-	ObjectSize [2]uint32 `json:"object_size"`
-
-	RequestHdr           *HTTPHdr `json:"request_hdr"`
-	ResponseHdr          *HTTPHdr `json:"response_hdr"`
-	RequestSentTime      int64    `json:"request_sent_time"`
-	ResponseReceivedTime int64    `json:"response_received_time"`
-	FragOffsetCount      int      `json:"frag_offset_count"`
-	FragOffset           uint64   `json:"-"` // TODO： 指针
-
-	//BeloneDir    *cache.Dir `json:"-"`
-	YYDiskOffset int64 `json:"yy_disk_offset"`
+	Magic                uint32    `json:"magic"`
+	Writeable            int32     `json:"writeable"`
+	UnmarshalLen         int32     `json:"unmarshal_len"`
+	ID                   int32     `json:"id"`
+	RID                  int32     `json:"rid"`
+	ObjectKey            [4]uint32 `json:"object_key"`
+	ObjectSize           [2]uint32 `json:"object_size"`
+	RequestHdr           *HTTPHdr  `json:"request_hdr"`
+	ResponseHdr          *HTTPHdr  `json:"response_hdr"`
+	RequestSentTime      int64     `json:"request_sent_time"`
+	ResponseReceivedTime int64     `json:"response_received_time"`
+	FragOffsetCount      int       `json:"frag_offset_count"`
+	FragOffset           uint64    `json:"-"` // TODO： 指针
+	IntegralFragOffsets  [4]uint64 `json:"-"` // todo:
+	YYDiskOffset         int64     `json:"yy_disk_offset"`
 }
 
 //class HTTPHdr : public MIMEHdr
 type HTTPHdr struct {
 	HeapPos      int64    `json:"heap_pos"`
 	HdrHeep      *HdrHeep `json:"hdr_heep"`
+	HostLength   int      `json:"host_length"`
+	Port         int      `json:"port"`
+	TargetCached bool     `json:"target_cached"`
+	TargetInURL  bool     `json:"target_in_url"`
+	PortInHeader bool     `json:"port_in_header"`
 	YYDiskOffset int64    `json:"yy_disk_offset"`
 }
 
@@ -76,6 +82,7 @@ type HdrHeapObjHeader struct {
 
 //
 // \---alt: 48 ---| ---hdrHeap:
+// HTTPCacheAlt表述 HTTP在cache中的存储描述
 func (hca *HTTPCacheAlt) LoadFromBuffer(buffer []byte) error {
 
 	if len(buffer) < 100 {
@@ -83,13 +90,21 @@ func (hca *HTTPCacheAlt) LoadFromBuffer(buffer []byte) error {
 	}
 	var curPos int64 = 0
 	hca.Magic = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
-	curPos += 4
+
 	if hca.Magic != CACHE_ALT_MAGIC_MARSHALED {
 		return fmt.Errorf("magic not match")
 	}
-
 	curPos = 4
+	hca.Writeable = int32(binary.LittleEndian.Uint32(buffer[curPos : curPos+4]))
+
+	curPos = 8
+	hca.UnmarshalLen = int32(binary.LittleEndian.Uint32(buffer[curPos : curPos+4]))
+
+	curPos = 12
 	hca.ID = int32(binary.LittleEndian.Uint32(buffer[curPos : curPos+4]))
+
+	curPos = 16
+	hca.RID = int32(binary.LittleEndian.Uint32(buffer[curPos : curPos+4]))
 
 	curPos = 20
 	hca.ObjectKey[0] = binary.LittleEndian.Uint32(buffer[curPos : curPos+4])
@@ -107,6 +122,7 @@ func (hca *HTTPCacheAlt) LoadFromBuffer(buffer []byte) error {
 
 	REQUEST_HDR_OFFSET := 48
 	requestHeader.YYDiskOffset = hca.YYDiskOffset + int64(REQUEST_HDR_OFFSET)
+
 	curPos = 48
 	requestHeader.HeapPos = int64(binary.LittleEndian.Uint64(buffer[curPos : curPos+8]))
 	// len = 2216
@@ -119,10 +135,36 @@ func (hca *HTTPCacheAlt) LoadFromBuffer(buffer []byte) error {
 	requestHeader.HdrHeep = reqHeap
 	hca.RequestHdr = requestHeader
 
+	curPos = 96
+	hca.RequestHdr.HostLength = int(binary.LittleEndian.Uint32(buffer[curPos : curPos+4]))
+
+	curPos = 100
+	hca.RequestHdr.Port = int(binary.LittleEndian.Uint32(buffer[curPos : curPos+4]))
+
+	curPos = 104
+	if (binary.LittleEndian.Uint16(buffer[curPos:curPos+2]) & uint16(0x00FF)) != 0 {
+		hca.RequestHdr.TargetCached = true
+	} else {
+		hca.RequestHdr.TargetCached = false
+	}
+
+	curPos = 105
+	if (binary.LittleEndian.Uint16(buffer[curPos:curPos+2]) & uint16(0x00FF)) != 0 {
+		hca.RequestHdr.TargetInURL = true
+	} else {
+		hca.RequestHdr.TargetInURL = false
+	}
+
+	curPos = 106
+	if (binary.LittleEndian.Uint16(buffer[curPos:curPos+2]) & uint16(0x00FF)) != 0 {
+		hca.RequestHdr.PortInHeader = true
+	} else {
+		hca.RequestHdr.PortInHeader = false
+	}
+
 	// response header process
 	//fmt.Println("------begin parse reponse info----")
 	responseHeader := &HTTPHdr{}
-
 	responseHeader.YYDiskOffset = hca.YYDiskOffset + 112
 	curPos = 112
 	responseHeader.HeapPos = int64(binary.LittleEndian.Uint64(buffer[curPos : curPos+8]))
@@ -187,6 +229,7 @@ func UnmarshalHeap(buffer []byte) (*HdrHeep, error) {
 	var next int64
 	//return nil
 	for {
+		// 循环释放header信息
 		cc := &HdrHeapObjHeader{}
 		//cc.YYDiskOffset = reqh.YYDiskOffset + int64(hdrHeap.MDataStart) + next
 		cc.HdrHeep = hdrHeap
