@@ -7,21 +7,14 @@ pipeline {
         input(message: 'should continue', id: 'abc', ok: 'Yes')
       }
     }
-    stage('stage2') {
-      parallel {
-        stage('stage2') {
-          steps {
-            timeout(time: 10)
-          }
-        }
-        stage('stage2.1') {
-          steps {
-            echo 'abc'
-          }
-        }
+    stage('stage2.1') {
+      steps {
+        echo 'abc'
+        sleep 5
+        input(message: 'continue', id: 'c2', ok: 'Yes')
       }
     }
-    stage('error') {
+    stage('writefile') {
       steps {
         writeFile(file: '111', text: '1111')
       }
