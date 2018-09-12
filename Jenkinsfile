@@ -4,6 +4,7 @@ pipeline {
     stage('stage1') {
       steps {
         sh 'echo 123'
+        input(message: 'should continue', id: 'abc', ok: 'Yes')
       }
     }
     stage('stage2') {
@@ -20,7 +21,7 @@ pipeline {
         }
       }
     }
-    stage('') {
+    stage('error') {
       steps {
         writeFile(file: '111', text: '1111')
       }
