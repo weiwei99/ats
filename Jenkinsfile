@@ -8,10 +8,19 @@ pipeline {
       }
     }
     stage('stage2.1') {
-      steps {
-        echo 'abc'
-        sleep 5
-        input(message: 'continue', id: 'c2', ok: 'Yes')
+      parallel {
+        stage('stage2.1') {
+          steps {
+            echo 'abc'
+            sleep 5
+            input(message: 'continue', id: 'c2', ok: 'Yes')
+          }
+        }
+        stage('') {
+          steps {
+            echo '123'
+          }
+        }
       }
     }
     stage('writefile') {
